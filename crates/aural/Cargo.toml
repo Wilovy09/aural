@@ -1,0 +1,32 @@
+[package]
+name = "aural"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "aural"
+path = "src/main.rs"
+
+[dependencies]
+freya.workspace = true
+freya-winit.workspace = true
+log.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+rodio.workspace = true
+ytmusic.workspace = true
+motion.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { workspace = true, features = ["android-native-activity"] }
+android_logger.workspace = true
+jni = "0.21"
+# QuickJS ships no pregenerated bindings for Android; generate them at build time.
+rquickjs = { version = "0.12", features = ["bindgen"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+env_logger.workspace = true
