@@ -1,0 +1,21 @@
+[package]
+name = "motion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytes = "1"
+log.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde_json = "1"
+tokio = { workspace = true, features = ["time"] }
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ndk = { version = "0.9", features = ["media", "api-level-28"] }
+ndk-sys = "0.6"
