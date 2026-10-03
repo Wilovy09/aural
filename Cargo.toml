@@ -1,7 +1,29 @@
-[package]
-name = "aural"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
 
-[dependencies]
-freya = "0.4.3"
+[workspace.dependencies]
+freya = { version = "0.4.3", features = ["engine"] }
+freya-winit = "0.4.3"
+winit = "0.30.13"
+log = "0.4"
+android_logger = "0.15"
+env_logger = "0.11"
+anyhow = "1"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-aac", "symphonia-isomp4"] }
+motion = { path = "crates/motion" }
+ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "f213c0b" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.dev.package."*"]
+opt-level = 2
