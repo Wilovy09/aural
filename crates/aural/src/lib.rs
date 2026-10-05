@@ -83,6 +83,17 @@ fn android_main(droid: freya::winit::platform::android::activity::AndroidApp) {
     );
     log::info!("aural: android_main, abi {}", std::env::consts::ARCH);
 
+    // winit builds one event loop per process. A window reopened while the process lived on
+    // (music kept it) cannot have one, so the music is handed on to a fresh process instead.
+    static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RAN.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Android brings the activity back up in a new process by itself when this one ends
+        // while it opens.
+        log::info!("aural: reopened in a living process, starting a fresh one");
+        media::hand_off();
+        std::process::exit(0);
+    }
+
     login::remember(droid.clone());
 
     let event_loop = EventLoop::with_user_event()
@@ -95,4 +106,12 @@ fn android_main(droid: freya::winit::platform::android::activity::AndroidApp) {
             .with_event_loop(event_loop)
             .with_plugin(freya::android::AndroidPlugin::new(droid)),
     );
+
+    // The window is gone. With music playing the process stays for it, the notification
+    // still driving it; otherwise it ends, so the next launch starts clean.
+    if !media::playing() {
+        log::info!("aural: window closed, nothing playing, ending");
+        std::process::exit(0);
+    }
+    log::info!("aural: window closed, music goes on in the background");
 }

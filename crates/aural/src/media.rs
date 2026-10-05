@@ -33,6 +33,63 @@ struct Shown {
 }
 
 static SHOWN: Mutex<Option<Shown>> = Mutex::new(None);
+/// The queue as it plays and the current song's place in it, for a hand-off.
+static QUEUE: Mutex<(Vec<Song>, usize)> = Mutex::new((Vec::new(), 0));
+
+/// What a new process picks up from the one before it: the queue and where it was.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Resume {
+    pub queue: Vec<Song>,
+    pub index: usize,
+    pub position: Duration,
+}
+
+fn resume_file() -> std::path::PathBuf {
+    crate::platform::data_dir().join("resume.json")
+}
+
+/// Whether music is playing right now.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn playing() -> bool {
+    SHOWN
+        .lock()
+        .ok()
+        .and_then(|shown| shown.as_ref().map(|shown| shown.playing))
+        .unwrap_or(false)
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+/// Writes down what plays, for the process that takes over. Only a song still playing is
+/// handed on.
+pub fn hand_off() {
+    let position = match SHOWN.lock() {
+        Ok(shown) => match shown.as_ref() {
+            Some(shown) if shown.playing => expected(shown),
+            _ => return,
+        },
+        Err(_) => return,
+    };
+    let Ok(queue) = QUEUE.lock() else {
+        return;
+    };
+    let resume = Resume {
+        queue: queue.0.clone(),
+        index: queue.1,
+        position,
+    };
+    if let Ok(body) = serde_json::to_vec(&resume) {
+        let _ = std::fs::write(resume_file(), body);
+    }
+}
+
+/// What the process before this one was playing, once: the file is gone after.
+pub fn take_resume() -> Option<Resume> {
+    let body = std::fs::read(resume_file()).ok()?;
+    let _ = std::fs::remove_file(resume_file());
+    serde_json::from_slice::<Resume>(&body)
+        .ok()
+        .filter(|resume| resume.index < resume.queue.len())
+}
 
 /// Follows one engine update. Runs on the engine's thread.
 pub fn observe(update: &Update) {
@@ -82,7 +139,12 @@ pub fn observe(update: &Update) {
             *shown = None;
             stop();
         }
-        Update::Queue(..) | Update::Error(_) => {}
+        Update::Queue(queue, index) => {
+            if let Ok(mut held) = QUEUE.lock() {
+                *held = (queue.clone(), *index);
+            }
+        }
+        Update::Error(_) => {}
     }
 }
 

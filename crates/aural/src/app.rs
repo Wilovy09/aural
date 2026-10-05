@@ -209,6 +209,14 @@ fn boot(station: Station) -> Engine {
     let (updates, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     let engine = Engine::start(client(), updates);
     crate::media::listen(engine.clone());
+    // The process before this one handed its music on: carry on where it was.
+    if let Some(resume) = crate::media::take_resume() {
+        engine.send(Command::Play {
+            queue: resume.queue,
+            index: resume.index,
+        });
+        engine.send(Command::Seek(resume.position));
+    }
 
     let mut playback = station;
     spawn_forever(async move {

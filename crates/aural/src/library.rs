@@ -12,7 +12,7 @@ pub const THUMB_EDGE: u32 = 226;
 pub const COVER_EDGE: u32 = 544;
 
 /// A playable song.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Song {
     pub id: String,
     pub title: String,
