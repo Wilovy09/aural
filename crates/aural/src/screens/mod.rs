@@ -4,6 +4,7 @@ pub mod backdrop;
 pub mod cards;
 pub mod devices;
 pub mod fullscreen;
+pub mod home;
 pub mod lyrics;
 pub mod pairing;
 pub mod queue;

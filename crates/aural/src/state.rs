@@ -44,6 +44,8 @@ impl<T> Load<T> {
 /// The screen the content area shows.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
+    /// The account's home feed.
+    Home,
     Search,
     Songs,
     Playlists,
@@ -56,7 +58,8 @@ pub enum Page {
 }
 
 /// The sidebar's entries, top to bottom.
-pub const NAV: [Page; 5] = [
+pub const NAV: [Page; 6] = [
+    Page::Home,
     Page::Search,
     Page::Songs,
     Page::Playlists,
@@ -110,7 +113,7 @@ impl Default for Focus {
     fn default() -> Self {
         Self {
             zone: Zone::Sidebar,
-            sidebar: 1,
+            sidebar: 0,
             content: Spot::Action(0),
             player: 1,
             full_row: 1,
@@ -165,6 +168,8 @@ pub struct Now {
     /// The queue in play order and the current song's place in it.
     pub queue: Vec<Song>,
     pub index: usize,
+    /// The light the song's cover casts, tinting the shell.
+    pub light: Option<freya::prelude::Color>,
 }
 
 /// The lyrics of the song that is playing.
@@ -240,6 +245,8 @@ impl Filter {
 pub struct AppState {
     pub auth: Auth,
     pub library: Load<Library>,
+    /// The home feed's shelves.
+    pub home: Load<Vec<crate::library::HomeShelf>>,
     pub detail: Load<Vec<Song>>,
     pub artist: Load<crate::library::ArtistPage>,
     pub page: Page,
@@ -251,6 +258,9 @@ pub struct AppState {
     pub mode: Mode,
     /// Whether the player shows albums' animated covers (opt-in).
     pub motion: bool,
+    /// The text and interface size settings.
+    pub text: crate::settings::Scale,
+    pub interface: crate::settings::Scale,
     /// Sign out was pressed once and waits for a second OK.
     pub confirm_sign_out: bool,
     pub now: Now,
@@ -288,7 +298,7 @@ impl Default for Auth {
 
 impl Default for Page {
     fn default() -> Self {
-        Page::Songs
+        Page::Home
     }
 }
 
@@ -333,10 +343,11 @@ impl AppState {
     pub fn actions(&self) -> usize {
         match &self.page {
             Page::Songs | Page::Detail(_) => 2,
-            Page::Account => 2,
+            Page::Account => 3,
             Page::Artist(_) => 2,
             Page::Search => 2,
             Page::Devices => 1,
+            Page::Home => 0,
             Page::Playlists | Page::Albums => 0,
         }
     }

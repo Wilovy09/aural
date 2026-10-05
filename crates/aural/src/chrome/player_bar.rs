@@ -1,5 +1,6 @@
-//! The player bar along the bottom: the song on the left, the transport and progress in the
-//! middle, the fullscreen button on the right.
+//! The player: an island floating over the bottom edge, faintly lit by the cover of the song
+//! playing. The song on the left, the transport and progress in the middle, the devices and
+//! fullscreen buttons on the right.
 
 use freya::prelude::*;
 use freya::radio::use_radio;
@@ -23,79 +24,83 @@ impl Component for PlayerBar {
         let song = state.now.song.clone();
         let playing = state.now.playing;
         let loading = state.now.loading;
+        let island = match state.now.light {
+            Some(light) => ui::tint::mix(color::SECONDARY, light, 0.10),
+            None => color::SECONDARY,
+        };
 
-        rect()
-            .width(Size::fill())
-            .height(Size::px(metrics::PLAYER_BAR))
-            .background(color::SECONDARY)
-            .border(Border::new().fill(color::BORDER).width(BorderWidth {
-                top: 1.,
-                ..Default::default()
-            }))
-            .padding((0., 20.))
-            .direction(Direction::Horizontal)
-            .content(Content::Flex)
-            .cross_align(Alignment::Center)
-            .spacing(16.)
-            .child(
-                rect()
-                    .width(Size::flex(1.))
-                    .on_press(press(4))
-                    .child(now_playing(song)),
-            )
-            .child(
-                rect()
-                    .width(Size::flex(1.))
-                    .max_width(Size::px(560.))
-                    .spacing(6.)
-                    .cross_align(Alignment::Center)
-                    .child(
-                        rect()
-                            .direction(Direction::Horizontal)
-                            .spacing(8.)
-                            .child(
-                                ui::button(Variant::Ghost, Some(Icon::Previous), None, ring(0))
-                                    .on_press(press(0)),
-                            )
-                            .child(
-                                ui::button(
-                                    Variant::Primary,
-                                    Some(match playing {
-                                        true => Icon::PauseFilled,
-                                        false => Icon::PlayFilled,
-                                    }),
-                                    None,
-                                    ring(1),
+        rect().width(Size::fill()).padding((0., 8., 8., 8.)).child(
+            rect()
+                .width(Size::fill())
+                .height(Size::px(metrics::PLAYER_BAR - 8.))
+                .corner_radius(metrics::RADIUS_LG)
+                .background(island)
+                .border(Border::new().fill(color::SIDEBAR_BORDER).width(1.))
+                .padding((0., 16.))
+                .direction(Direction::Horizontal)
+                .content(Content::Flex)
+                .cross_align(Alignment::Center)
+                .spacing(16.)
+                .child(
+                    rect()
+                        .width(Size::flex(1.))
+                        .on_press(press(4))
+                        .child(now_playing(song)),
+                )
+                .child(
+                    rect()
+                        .width(Size::flex(1.))
+                        .max_width(Size::px(560.))
+                        .spacing(6.)
+                        .cross_align(Alignment::Center)
+                        .child(
+                            rect()
+                                .direction(Direction::Horizontal)
+                                .spacing(8.)
+                                .child(
+                                    ui::button(Variant::Ghost, Some(Icon::Previous), None, ring(0))
+                                        .on_press(press(0)),
                                 )
-                                .on_press(press(1)),
-                            )
-                            .child(
-                                ui::button(Variant::Ghost, Some(Icon::Next), None, ring(2))
-                                    .on_press(press(2)),
-                            ),
-                    )
-                    .child(Progress {
-                        loading,
-                        focused: false,
-                        ink: color::MUTED_FOREGROUND,
-                    }),
-            )
-            .child(
-                rect()
-                    .width(Size::flex(1.))
-                    .direction(Direction::Horizontal)
-                    .main_align(Alignment::End)
-                    .spacing(4.)
-                    .child(Casting)
-                    .child(
-                        ui::button(Variant::Ghost, Some(Icon::Cast), None, ring(3))
-                            .on_press(press(3)),
-                    )
-                    .child(
-                        ui::button(Variant::Ghost, Some(Icon::Maximize), None, ring(4))
-                            .on_press(press(4)),
-                    ),
-            )
+                                .child(
+                                    ui::button(
+                                        Variant::Primary,
+                                        Some(match playing {
+                                            true => Icon::PauseFilled,
+                                            false => Icon::PlayFilled,
+                                        }),
+                                        None,
+                                        ring(1),
+                                    )
+                                    .on_press(press(1)),
+                                )
+                                .child(
+                                    ui::button(Variant::Ghost, Some(Icon::Next), None, ring(2))
+                                        .on_press(press(2)),
+                                ),
+                        )
+                        .child(Progress {
+                            loading,
+                            focused: false,
+                            ink: color::MUTED_FOREGROUND,
+                        }),
+                )
+                .child(
+                    rect()
+                        .width(Size::flex(1.))
+                        .direction(Direction::Horizontal)
+                        .main_align(Alignment::End)
+                        .spacing(4.)
+                        .child(Casting)
+                        .child(
+                            ui::button(Variant::Ghost, Some(Icon::Cast), None, ring(3))
+                                .on_press(press(3)),
+                        )
+                        .child(
+                            ui::button(Variant::Ghost, Some(Icon::Maximize), None, ring(4))
+                                .on_press(press(4)),
+                        ),
+                ),
+        )
     }
 }
 

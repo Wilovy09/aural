@@ -38,6 +38,10 @@ pub enum Action {
     Connect(Option<usize>),
     /// Give the devices page's field the keyboard.
     EditField,
+    /// The text size setting.
+    SetText(crate::settings::Scale),
+    /// The interface size setting.
+    SetInterface(crate::settings::Scale),
 }
 
 /// The arrow keys, OK and Back, whatever the device calls them.
@@ -84,6 +88,8 @@ pub enum Target {
     Back,
     /// The devices to play on.
     Devices,
+    /// The search page, with the keyboard in its field.
+    Search,
 }
 
 /// A tap: the focus moves onto `target` and OK is pressed there.
@@ -116,6 +122,13 @@ pub fn tap(state: &mut AppState, target: Target, columns: usize) -> Action {
         Target::Devices => {
             open_devices(state);
             return Action::None;
+        }
+        Target::Search => {
+            state.fullscreen = false;
+            go(state, Page::Search);
+            state.focus.zone = Zone::Content;
+            state.focus.content = Spot::Action(0);
+            return Action::EditSearch;
         }
     }
     press(state, Press::Ok, columns)
@@ -264,6 +277,12 @@ fn content(state: &mut AppState, press: Press, columns: usize) -> Action {
     if state.page == Page::Devices {
         return devices(state, press);
     }
+    if state.page == Page::Home {
+        return home(state, press);
+    }
+    if state.page == Page::Account {
+        return account(state, press);
+    }
     let actions = state.actions();
     let rows = state.songs().map_or(0, <[Song]>::len);
     let cards = state.cards().map_or(0, <[Collection]>::len);
@@ -295,6 +314,10 @@ fn content(state: &mut AppState, press: Press, columns: usize) -> Action {
         }
         (_, Press::Down) => {
             state.focus.zone = Zone::Player;
+            return Action::None;
+        }
+        (Spot::Action(2), Press::Ok) if state.page == Page::Account => {
+            open_devices(state);
             return Action::None;
         }
         (Spot::Action(0), Press::Ok)
@@ -369,6 +392,114 @@ fn player_action(button: usize) -> Action {
     }
 }
 
+/// The home feed: a shelf a row, left and right along one, up and down between them.
+fn home(state: &mut AppState, press: Press) -> Action {
+    let lengths: Vec<usize> = state
+        .home
+        .ready()
+        .map(|shelves| shelves.iter().map(|shelf| shelf.picks.len()).collect())
+        .unwrap_or_default();
+    let spot = state.focus.content;
+    let next = match (spot, press) {
+        (Spot::Cell(shelf, at), Press::Right)
+            if at + 1 < lengths.get(shelf).copied().unwrap_or(0) =>
+        {
+            Spot::Cell(shelf, at + 1)
+        }
+        (Spot::Cell(shelf, at), Press::Left) if at > 0 => Spot::Cell(shelf, at - 1),
+        (Spot::Cell(shelf, at), Press::Up) if shelf > 0 => {
+            Spot::Cell(shelf - 1, at.min(lengths[shelf - 1].saturating_sub(1)))
+        }
+        (Spot::Cell(shelf, at), Press::Down) if shelf + 1 < lengths.len() => {
+            Spot::Cell(shelf + 1, at.min(lengths[shelf + 1].saturating_sub(1)))
+        }
+        (Spot::Cell(shelf, at), Press::Ok) => {
+            let Some(found) = state.home.ready().and_then(|shelves| shelves.get(shelf)) else {
+                return Action::None;
+            };
+            return match found.picks.get(at) {
+                Some(crate::library::Pick::Collection(collection)) => {
+                    Action::Open(collection.clone())
+                }
+                Some(crate::library::Pick::Song(song)) => {
+                    // The shelf's songs are the queue, from the one chosen.
+                    let queue: Vec<Song> = found
+                        .picks
+                        .iter()
+                        .filter_map(|pick| match pick {
+                            crate::library::Pick::Song(song) => Some(song.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let index = queue.iter().position(|it| it.id == song.id).unwrap_or(0);
+                    Action::Play { queue, index }
+                }
+                None => Action::None,
+            };
+        }
+        (_, Press::Left) => {
+            state.focus.zone = Zone::Sidebar;
+            return Action::None;
+        }
+        (_, Press::Down) => {
+            state.focus.zone = Zone::Player;
+            return Action::None;
+        }
+        _ => spot,
+    };
+    state.focus.content = next;
+    Action::None
+}
+
+/// The account page, a column of settings top to bottom: animated covers, text size, interface
+/// size, devices, sign out. The two sizes are rows of options, left and right along them.
+fn account(state: &mut AppState, press: Press) -> Action {
+    use crate::settings::Scale;
+    let sizes = Scale::ALL.len();
+    let chosen = |scale: Scale| Scale::ALL.iter().position(|it| *it == scale).unwrap_or(1);
+    let (text, interface) = (chosen(state.text), chosen(state.interface));
+    let spot = state.focus.content;
+    let next = match (spot, press) {
+        (Spot::Action(1), Press::Down) => Spot::Cell(0, text),
+        (Spot::Cell(0, _), Press::Up) => Spot::Action(1),
+        (Spot::Cell(0, _), Press::Down) => Spot::Cell(1, interface),
+        (Spot::Cell(1, _), Press::Up) => Spot::Cell(0, text),
+        (Spot::Cell(1, _), Press::Down) => Spot::Action(2),
+        (Spot::Action(2), Press::Up) => Spot::Cell(1, interface),
+        (Spot::Action(2), Press::Down) => Spot::Action(0),
+        (Spot::Action(0), Press::Up) => Spot::Action(2),
+        (Spot::Cell(group, at), Press::Right) if at + 1 < sizes => Spot::Cell(group, at + 1),
+        (Spot::Cell(group, at), Press::Left) if at > 0 => Spot::Cell(group, at - 1),
+        (Spot::Cell(0, at), Press::Ok) => return Action::SetText(Scale::ALL[at]),
+        (Spot::Cell(_, at), Press::Ok) => return Action::SetInterface(Scale::ALL[at]),
+        (Spot::Action(1), Press::Ok) => return Action::ToggleMotion,
+        (Spot::Action(2), Press::Ok) => {
+            open_devices(state);
+            return Action::None;
+        }
+        (Spot::Action(0), Press::Ok) => {
+            return match state.auth {
+                crate::state::Auth::SignedIn(_) => {
+                    state.confirm_sign_out = true;
+                    Action::None
+                }
+                _ => Action::SignIn,
+            };
+        }
+        (_, Press::Left) => {
+            state.focus.zone = Zone::Sidebar;
+            return Action::None;
+        }
+        (_, Press::Down) => {
+            state.focus.zone = Zone::Player;
+            return Action::None;
+        }
+        _ => spot,
+    };
+    state.focus.content = next;
+    Action::None
+}
+
 /// Opens the devices page from wherever the player is, the fullscreen one included.
 fn open_devices(state: &mut AppState) {
     state.fullscreen = false;
@@ -416,7 +547,11 @@ fn enter_content(state: &mut AppState) {
 
 /// The first spot of the page on screen.
 pub fn first(state: &AppState) -> Spot {
-    if state.actions() > 0 {
+    if state.page == Page::Home {
+        Spot::Cell(0, 0)
+    } else if state.page == Page::Account {
+        Spot::Action(1)
+    } else if state.actions() > 0 {
         Spot::Action(0)
     } else if state.cards().is_some() {
         Spot::Card(0)
@@ -429,6 +564,14 @@ fn valid(state: &AppState, spot: Spot) -> bool {
     match spot {
         Spot::Action(i) => i < state.actions(),
         Spot::Row(r) if state.page == Page::Devices => r <= state.connect.devices.len(),
+        Spot::Cell(group, at) if state.page == Page::Account => {
+            group < 2 && at < crate::settings::Scale::ALL.len()
+        }
+        Spot::Cell(shelf, at) if state.page == Page::Home => state
+            .home
+            .ready()
+            .and_then(|shelves| shelves.get(shelf))
+            .is_some_and(|found| at < found.picks.len()),
         Spot::Row(r) => state.songs().is_some_and(|songs| r < songs.len()),
         Spot::Card(c) => state.cards().is_some_and(|cards| c < cards.len()),
         Spot::Chip(at) => at < Filter::ALL.len(),

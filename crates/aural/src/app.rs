@@ -139,7 +139,10 @@ fn forget_remote(mut station: Station) {
 pub fn link_needs_code() -> bool {
     TAPS.with_borrow(|taps| {
         taps.as_ref().is_some_and(|(station, _)| {
-            matches!(station.peek().connect.link, crate::connect::Link::NeedCode(_))
+            matches!(
+                station.peek().connect.link,
+                crate::connect::Link::NeedCode(_)
+            )
         })
     })
 }
@@ -153,7 +156,9 @@ pub fn pair(code: &str) {
 fn follow(mut station: Station, engine: &Engine, event: crate::connect::Event) {
     use crate::connect::{Event, Link};
     match event {
-        Event::Devices(devices) => station.write_channel(Channel::Connect).connect.devices = devices,
+        Event::Devices(devices) => {
+            station.write_channel(Channel::Connect).connect.devices = devices
+        }
         Event::Link(link) => {
             let was_remote = station.peek().connect.remote().is_some();
             let lost = was_remote && !matches!(link, Link::Connected(_));
@@ -162,7 +167,9 @@ fn follow(mut station: Station, engine: &Engine, event: crate::connect::Event) {
                 forget_remote(station);
             }
         }
-        Event::Pairing(pairing) => station.write_channel(Channel::Connect).connect.pairing = pairing,
+        Event::Pairing(pairing) => {
+            station.write_channel(Channel::Connect).connect.pairing = pairing
+        }
         Event::State(state) => {
             if station.peek().connect.remote().is_none() {
                 return;
@@ -170,7 +177,8 @@ fn follow(mut station: Station, engine: &Engine, event: crate::connect::Event) {
             let new_song = state.song.as_ref().map(|song| &song.id)
                 != station.peek().now.song.as_ref().map(|song| &song.id);
             if new_song && let Some(song) = state.song.clone() {
-                crate::sheets::look_up(station, song);
+                crate::sheets::look_up(station, song.clone());
+                light(station, song);
             }
             {
                 let mut now = station.write_channel(Channel::Now);
@@ -224,10 +232,17 @@ fn set_client(api: Arc<YtMusic>, engine: &Engine) {
 }
 
 pub fn app() -> impl IntoElement {
-    let station = use_init_radio_station::<AppState, Channel>(|| AppState {
-        motion: crate::settings::load().motion,
-        ..AppState::default()
+    let station = use_init_radio_station::<AppState, Channel>(|| {
+        let settings = crate::settings::load();
+        ui::set_text_scale(settings.text.text());
+        AppState {
+            motion: settings.motion,
+            text: settings.text,
+            interface: settings.interface,
+            ..AppState::default()
+        }
     });
+    use_hook(move || crate::settings::apply_interface(station.peek().interface));
     let auth = use_radio::<AppState, Channel>(Channel::Auth);
     let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
 
@@ -244,6 +259,18 @@ pub fn app() -> impl IntoElement {
     let on_key = {
         let engine = engine.clone();
         move |event: Event<KeyboardEventData>| {
+            // ⌘K or Ctrl K: straight to the search field.
+            if let Key::Character(typed) = &event.key
+                && typed.eq_ignore_ascii_case("k")
+                && (event.modifiers.meta() || event.modifiers.ctrl())
+            {
+                ui::set_touch(true);
+                // A computer types in the bar on top, wherever the page is.
+                if crate::chrome::top_bar::edit() {
+                    return;
+                }
+                return tap(nav::Target::Search);
+            }
             let Some(press) = Press::from_key(&event.key) else {
                 return;
             };
@@ -284,6 +311,7 @@ pub fn app() -> impl IntoElement {
     let page = navigation.read().page.clone();
 
     let content = match page {
+        Page::Home => crate::screens::home::Home.into_element(),
         Page::Songs | Page::Detail(_) => Songs.into_element(),
         Page::Artist(_) => crate::screens::artist::Artist.into_element(),
         Page::Playlists | Page::Albums => Cards.into_element(),
@@ -299,6 +327,7 @@ pub fn app() -> impl IntoElement {
                 .expanded()
                 .content(Content::Flex)
                 .padding((top, 0., 0., 0.))
+                .child(Glow)
                 .child(
                     rect()
                         .width(Size::fill())
@@ -328,7 +357,17 @@ pub fn app() -> impl IntoElement {
                         rect()
                             .width(Size::flex(1.))
                             .height(Size::fill())
-                            .child(content),
+                            .content(Content::Flex)
+                            .child(Glow)
+                            .maybe(crate::chrome::top_bar::shown(), |stage| {
+                                stage.child(crate::chrome::top_bar::TopBar)
+                            })
+                            .child(
+                                rect()
+                                    .width(Size::fill())
+                                    .height(Size::flex(1.))
+                                    .child(content),
+                            ),
                     ),
             )
             .child(PlayerBar),
@@ -339,12 +378,32 @@ pub fn app() -> impl IntoElement {
         .background(ui::color::BACKGROUND)
         .color(ui::color::FOREGROUND)
         .on_global_key_down(on_key)
-        .child(match (signed_in, fullscreen) {
-            (false, _) => SignIn.into_element(),
-            (true, true) => Fullscreen.into_element(),
-            (true, false) => shell.into_element(),
-        })
+        // A new text size lays everything out again: the shell is rebuilt under a new key.
+        .child(rect().key(navigation.read().text as u64).expanded().child(
+            match (signed_in, fullscreen) {
+                (false, _) => SignIn.into_element(),
+                (true, true) => Fullscreen.into_element(),
+                (true, false) => shell.into_element(),
+            },
+        ))
         .child(crate::screens::pairing::PairingCode)
+}
+
+/// The cover's light behind the top of the page: the song playing tints the room.
+#[derive(PartialEq)]
+struct Glow;
+
+impl Component for Glow {
+    fn render(&self) -> impl IntoElement {
+        let now = use_radio::<AppState, Channel>(Channel::Now);
+        let light = now.read().now.light;
+        rect()
+            .position(Position::new_absolute().top(0.).left(0.))
+            .layer(Layer::Relative(-1))
+            .width(Size::fill())
+            .height(Size::px(360.))
+            .map(light, |glow, light| glow.child(ui::tint::wash(light, 0.16)))
+    }
 }
 
 /// Starts the engine and restores the saved account; returns the engine handle.
@@ -410,6 +469,7 @@ fn apply(station: &mut Station, update: Update) {
     match update {
         Update::Loading(song) => {
             crate::sheets::look_up(*station, song.clone());
+            light(*station, song.clone());
             let mut state = station.write_channel(Channel::Now);
             state.now.song = Some(song);
             state.now.loading = true;
@@ -441,6 +501,26 @@ fn apply(station: &mut Station, update: Update) {
             state.now.error = Some(error);
         }
     }
+}
+
+/// Works out the light `song`'s cover casts (Apple's cover first) and puts it in the state.
+fn light(mut station: Station, song: crate::library::Song) {
+    spawn_forever(async move {
+        let apple =
+            crate::artwork::find(crate::artwork::Wanted::song(&song), library::THUMB_EDGE).await;
+        let youtube = song
+            .cover
+            .as_deref()
+            .map(|url| library::sized(url, library::THUMB_EDGE));
+        let Some(url) = apple.or(youtube) else {
+            return;
+        };
+        let found = ui::tint::of(url).await;
+        let still = station.peek().now.song.as_ref().map(|now| now.id.clone()) == Some(song.id);
+        if still {
+            station.write_channel(Channel::Now).now.light = found;
+        }
+    });
 }
 
 /// Does what a key press asked beyond moving the focus.
@@ -508,16 +588,50 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             let mut station = station;
             let mut state = station.write_channel(Channel::Navigation);
             state.motion = !state.motion;
-            crate::settings::save(crate::settings::Settings {
-                motion: state.motion,
-            });
+            save_settings(&state);
+        }
+        Action::SetText(scale) => {
+            let mut station = station;
+            ui::set_text_scale(scale.text());
+            let mut state = station.write_channel(Channel::Navigation);
+            state.text = scale;
+            save_settings(&state);
+        }
+        Action::SetInterface(scale) => {
+            let mut station = station;
+            crate::settings::apply_interface(scale);
+            let mut state = station.write_channel(Channel::Navigation);
+            state.interface = scale;
+            save_settings(&state);
         }
     }
+}
+
+fn save_settings(state: &AppState) {
+    crate::settings::save(crate::settings::Settings {
+        motion: state.motion,
+        text: state.text,
+        interface: state.interface,
+    });
 }
 
 /// Loads the library into the state.
 fn load_library(mut station: Station) {
     station.write_channel(Channel::Library).library = Load::Loading;
+    station.write_channel(Channel::Library).home = Load::Loading;
+    spawn_forever(async move {
+        let api = client();
+        let loaded = runtime::spawn(async move { library::home(&api).await }).await;
+        station.write_channel(Channel::Library).home = match loaded {
+            Ok(Ok(shelves)) => Load::Ready(shelves),
+            Ok(Err(error)) => Load::Failed(format!("{error:#}")),
+            Err(error) => Load::Failed(error.to_string()),
+        };
+        let mut state = station.write_channel(Channel::Navigation);
+        if state.focus.zone == Zone::Content && state.page == Page::Home {
+            state.focus.content = nav::first(&state);
+        }
+    });
     spawn_forever(async move {
         let api = client();
         let loaded = runtime::spawn(async move { library::load(&api).await }).await;
@@ -605,7 +719,7 @@ fn sign_in(mut station: Station, engine: Engine) {
                 station.write_channel(Channel::Auth).auth = Auth::SignedIn(session.account.clone());
                 {
                     let mut state = station.write_channel(Channel::Navigation);
-                    nav::go(&mut state, Page::Songs);
+                    nav::go(&mut state, Page::Home);
                     state.focus.zone = Zone::Sidebar;
                 }
                 load_library(station);

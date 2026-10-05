@@ -581,6 +581,7 @@ dependencies = [
  "futures-util",
  "gethostname",
  "jni 0.21.1",
+ "libc",
  "log",
  "lyrics",
  "mdns-sd",

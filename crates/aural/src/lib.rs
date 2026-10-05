@@ -70,6 +70,15 @@ pub fn run() {
     launch(launch_config());
 }
 
+/// Ends the process at once. `exit` would first run the native libraries' exit handlers, and
+/// some phones' graphics or audio drivers hang in theirs: the process lives on half dead and
+/// the app sits on its splash screen.
+#[cfg(target_os = "android")]
+fn die() -> ! {
+    // SAFETY: `_exit` ends the process without running anything else.
+    unsafe { libc::_exit(0) }
+}
+
 /// Android entry point, called by `NativeActivity` once `libaural.so` is loaded.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
@@ -92,7 +101,7 @@ fn android_main(droid: freya::winit::platform::android::activity::AndroidApp) {
         // while it opens.
         log::info!("aural: reopened in a living process, starting a fresh one");
         media::hand_off();
-        std::process::exit(0);
+        die();
     }
 
     login::remember(droid.clone());
@@ -112,7 +121,7 @@ fn android_main(droid: freya::winit::platform::android::activity::AndroidApp) {
     // still driving it; otherwise it ends, so the next launch starts clean.
     if !media::playing() {
         log::info!("aural: window closed, nothing playing, ending");
-        std::process::exit(0);
+        die();
     }
     log::info!("aural: window closed, music goes on in the background");
 }

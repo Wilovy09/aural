@@ -439,6 +439,103 @@ fn shelf_item(item: &serde_json::Value) -> Option<Collection> {
     })
 }
 
+/// One thing on a shelf of the home feed: a song to play or a collection to open.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pick {
+    Song(Song),
+    Collection(Collection),
+}
+
+impl Pick {
+    pub fn title(&self) -> &str {
+        match self {
+            Pick::Song(song) => &song.title,
+            Pick::Collection(collection) => &collection.title,
+        }
+    }
+
+    pub fn cover(&self) -> Option<&str> {
+        match self {
+            Pick::Song(song) => song.cover.as_deref(),
+            Pick::Collection(collection) => collection.cover.as_deref(),
+        }
+    }
+}
+
+/// A shelf of the home feed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HomeShelf {
+    pub title: String,
+    pub picks: Vec<Pick>,
+}
+
+/// YouTube Music's home feed for the account: its shelves, top to bottom.
+pub async fn home(api: &YtMusic) -> Result<Vec<HomeShelf>> {
+    use ytmusic::nav::Nav as _;
+    use ytmusic::parse;
+
+    let response = api
+        .execute(
+            "browse",
+            ytmusic::Client::Music,
+            serde_json::json!({ "browseId": "FEmusic_home" }),
+        )
+        .await?;
+    let mut shelves = Vec::new();
+    for carousel in parse::find_renderers(&response, "musicCarouselShelfRenderer") {
+        let title = carousel
+            .run_text(&["header", "musicCarouselShelfBasicHeaderRenderer", "title"])
+            .unwrap_or_default();
+        let picks: Vec<Pick> = carousel
+            .items(&["contents"])
+            .iter()
+            .filter_map(|item| {
+                parse::list_item_track(item)
+                    .and_then(song)
+                    .map(Pick::Song)
+                    .or_else(|| shelf_item(item).map(Pick::Collection))
+                    .or_else(|| two_row_song(item).map(Pick::Song))
+            })
+            .collect();
+        if !title.is_empty() && !picks.is_empty() {
+            shelves.push(HomeShelf {
+                title: shelf_title(&title),
+                picks,
+            });
+        }
+    }
+    Ok(shelves)
+}
+
+/// A song shown as a large card (a two-row item that plays rather than opens).
+fn two_row_song(item: &serde_json::Value) -> Option<Song> {
+    use ytmusic::nav::Nav as _;
+    use ytmusic::parse;
+
+    let renderer = item.at(&["musicTwoRowItemRenderer"])?;
+    let id = renderer.str_at(&["navigationEndpoint", "watchEndpoint", "videoId"])?;
+    let subtitle = renderer.run_text(&["subtitle"]).unwrap_or_default();
+    // "Song • Artist • 1.2M plays" or "Artist • Album": the artist is the part that is
+    // neither the kind nor a count.
+    let artist = subtitle
+        .split(" • ")
+        .find(|part| {
+            !matches!(*part, "Song" | "Video" | "Canción")
+                && !part.ends_with("views")
+                && !part.ends_with("plays")
+        })
+        .unwrap_or_default()
+        .to_owned();
+    Some(Song {
+        id: id.to_owned(),
+        title: renderer.run_text(&["title"])?,
+        artist,
+        album: None,
+        duration: None,
+        cover: cover(&parse::thumbnails(renderer)),
+    })
+}
+
 /// The shelf titles YouTube Music sends in English, in Spanish.
 /// YouTube's audience line in Spanish ("82.7M monthly audience" → "82.7M oyentes mensuales").
 fn audience(line: &str) -> String {
@@ -464,6 +561,26 @@ fn shelf_title(title: &str) -> String {
         "Videos" => "Videos".into(),
         "Live performances" => "Presentaciones en vivo".into(),
         "From your library" => "De tu biblioteca".into(),
+        "Quick picks" => "Selección rápida".into(),
+        "Albums for you" => "Álbumes para ti".into(),
+        "Music videos for you" => "Videos para ti".into(),
+        "Your favorites" => "Tus favoritos".into(),
+        "Today's hits" => "Éxitos de hoy".into(),
+        "Charts" => "Listas de éxitos".into(),
+        "Moods & moments" => "Estados de ánimo".into(),
+        "Similar to" => "Similar a".into(),
+        "Recently played" => "Escuchado recientemente".into(),
+        "Throwback jams" => "Clásicos".into(),
+        "Listen again" => "Volver a escuchar".into(),
+        "Mixed for you" => "Mezclas para ti".into(),
+        "Forgotten favorites" => "Favoritos olvidados".into(),
+        "Recommended albums" => "Álbumes recomendados".into(),
+        "Recommended music videos" => "Videos recomendados".into(),
+        "New releases" => "Novedades".into(),
+        "Covers and remixes" => "Covers y remixes".into(),
+        "Long listening" => "Para escuchar largo rato".into(),
+        "From the community" => "De la comunidad".into(),
+        "Trending" => "Tendencias".into(),
         other => match other.strip_prefix("Playlists by ") {
             Some(artist) => format!("{artist} hizo estas playlists"),
             None => other.to_owned(),
