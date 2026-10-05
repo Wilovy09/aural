@@ -3,6 +3,7 @@
 mod app;
 mod artwork;
 mod chrome;
+mod connect;
 mod cover;
 mod engine;
 mod images;
