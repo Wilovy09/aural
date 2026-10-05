@@ -73,7 +73,147 @@ pub fn seek(to: std::time::Duration) {
         return;
     };
     station.write_channel(Channel::Position).position.elapsed = to;
-    engine.send(Command::Seek(to));
+    player(station, &engine, Command::Seek(to));
+}
+
+/// Sends `command` to the player that plays: this device's engine, or the device this one
+/// controls through Aural Connect.
+fn player(station: Station, engine: &Engine, command: Command) {
+    if station.peek().connect.remote().is_none() {
+        return engine.send(command);
+    }
+    let remote = match command {
+        Command::Play { queue, index } => crate::connect::Remote::Play { queue, index },
+        Command::Toggle => crate::connect::Remote::Toggle,
+        Command::Next => crate::connect::Remote::Next,
+        Command::Previous => crate::connect::Remote::Previous,
+        Command::Seek(to) => crate::connect::Remote::Seek {
+            millis: to.as_millis() as u64,
+        },
+        Command::Shuffle(on) => crate::connect::Remote::Shuffle { on },
+        Command::Repeat(mode) => crate::connect::Remote::Repeat { mode },
+        Command::Client(_) => return engine.send(command),
+    };
+    crate::connect::command(remote);
+}
+
+thread_local! {
+    /// Where Connect's events go, for the devices page to start a link with.
+    static CONNECT: std::cell::RefCell<Option<crate::connect::Events>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Plays on `device` from now on, or on this device again with `None`.
+pub fn connect(device: Option<crate::connect::Device>) {
+    let Some((mut station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    let Some(events) = CONNECT.with_borrow(Clone::clone) else {
+        return;
+    };
+    let was_remote = station.peek().connect.remote().is_some();
+    crate::connect::disconnect();
+    match device {
+        Some(device) => {
+            // This device stops playing: the other one takes over.
+            if !was_remote && station.peek().now.playing {
+                engine.send(Command::Toggle);
+            }
+            crate::connect::connect(device, events);
+        }
+        None => {
+            station.write_channel(Channel::Connect).connect.link = crate::connect::Link::Idle;
+            if was_remote {
+                forget_remote(station);
+            }
+        }
+    }
+}
+
+/// Clears what the other device played, so this one's player starts empty again.
+fn forget_remote(mut station: Station) {
+    station.write_channel(Channel::Now).now = Default::default();
+    station.write_channel(Channel::Position).position = Default::default();
+}
+
+/// Whether the device being connected to waits for its code.
+pub fn link_needs_code() -> bool {
+    TAPS.with_borrow(|taps| {
+        taps.as_ref().is_some_and(|(station, _)| {
+            matches!(station.peek().connect.link, crate::connect::Link::NeedCode(_))
+        })
+    })
+}
+
+/// Sends the code shown on the other device.
+pub fn pair(code: &str) {
+    crate::connect::pair(code);
+}
+
+/// Follows one of Connect's events.
+fn follow(mut station: Station, engine: &Engine, event: crate::connect::Event) {
+    use crate::connect::{Event, Link};
+    match event {
+        Event::Devices(devices) => station.write_channel(Channel::Connect).connect.devices = devices,
+        Event::Link(link) => {
+            let was_remote = station.peek().connect.remote().is_some();
+            let lost = was_remote && !matches!(link, Link::Connected(_));
+            station.write_channel(Channel::Connect).connect.link = link;
+            if lost {
+                forget_remote(station);
+            }
+        }
+        Event::Pairing(pairing) => station.write_channel(Channel::Connect).connect.pairing = pairing,
+        Event::State(state) => {
+            if station.peek().connect.remote().is_none() {
+                return;
+            }
+            let new_song = state.song.as_ref().map(|song| &song.id)
+                != station.peek().now.song.as_ref().map(|song| &song.id);
+            if new_song && let Some(song) = state.song.clone() {
+                crate::sheets::look_up(station, song);
+            }
+            {
+                let mut now = station.write_channel(Channel::Now);
+                now.now.song = state.song;
+                now.now.playing = state.playing;
+                now.now.loading = state.loading;
+                now.now.index = state.index;
+                now.now.shuffle = state.shuffle;
+                now.now.repeat = state.repeat;
+            }
+            let mut position = station.write_channel(Channel::Position);
+            position.position.elapsed = std::time::Duration::from_millis(state.elapsed_millis);
+            position.position.total = state.total_millis.map(std::time::Duration::from_millis);
+        }
+        Event::Queue(queue, index) => {
+            if station.peek().connect.remote().is_none() {
+                return;
+            }
+            let mut now = station.write_channel(Channel::Now);
+            now.now.queue = queue;
+            now.now.index = index;
+        }
+        // A controller asks this device's player.
+        Event::Remote(remote) => match remote {
+            crate::connect::Remote::Shuffle { on } => {
+                let mut state = station.write_channel(Channel::Now);
+                state.now.shuffle = on;
+                crate::connect::modes(on, state.now.repeat);
+                engine.send(Command::Shuffle(on));
+            }
+            crate::connect::Remote::Repeat { mode } => {
+                let mut state = station.write_channel(Channel::Now);
+                state.now.repeat = mode;
+                crate::connect::modes(state.now.shuffle, mode);
+                engine.send(Command::Repeat(mode));
+            }
+            other => {
+                if let Some(command) = crate::connect::host_command(&other) {
+                    engine.send(command);
+                }
+            }
+        },
+    }
 }
 
 fn set_client(api: Arc<YtMusic>, engine: &Engine) {
@@ -125,6 +265,7 @@ pub fn app() -> impl IntoElement {
             if station.peek().typing {
                 if press == Press::Back {
                     crate::screens::search::leave();
+                    crate::screens::devices::leave();
                 }
                 return;
             }
@@ -148,6 +289,7 @@ pub fn app() -> impl IntoElement {
         Page::Playlists | Page::Albums => Cards.into_element(),
         Page::Account => Account.into_element(),
         Page::Search => crate::screens::search::Search.into_element(),
+        Page::Devices => crate::screens::devices::Devices.into_element(),
     };
     let shell = match ui::compact() {
         // A phone: the page over a mini player and the bottom bar.
@@ -202,6 +344,7 @@ pub fn app() -> impl IntoElement {
             (true, true) => Fullscreen.into_element(),
             (true, false) => shell.into_element(),
         })
+        .child(crate::screens::pairing::PairingCode)
 }
 
 /// Starts the engine and restores the saved account; returns the engine handle.
@@ -209,6 +352,16 @@ fn boot(station: Station) -> Engine {
     let (updates, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     let engine = Engine::start(client(), updates);
     crate::media::listen(engine.clone());
+
+    let (events, mut heard) = tokio::sync::mpsc::unbounded_channel();
+    CONNECT.set(Some(events.clone()));
+    crate::connect::start(events);
+    let connect_engine = engine.clone();
+    spawn_forever(async move {
+        while let Some(event) = heard.recv().await {
+            follow(station, &connect_engine, event);
+        }
+    });
     // The process before this one handed its music on: carry on where it was.
     if let Some(resume) = crate::media::take_resume() {
         engine.send(Command::Play {
@@ -250,6 +403,10 @@ fn boot(station: Station) -> Engine {
 
 /// Applies one engine update to the state.
 fn apply(station: &mut Station, update: Update) {
+    // While another device plays, the player shows that one's state, not this engine's.
+    if station.peek().connect.remote().is_some() {
+        return;
+    }
     match update {
         Update::Loading(song) => {
             crate::sheets::look_up(*station, song.clone());
@@ -290,14 +447,19 @@ fn apply(station: &mut Station, update: Update) {
 fn perform(station: Station, engine: &Engine, action: Action) {
     match action {
         Action::None => {}
-        Action::Play { queue, index } => engine.send(Command::Play { queue, index }),
+        Action::Play { queue, index } => player(station, engine, Command::Play { queue, index }),
         Action::Shuffle(mut queue) => {
             crate::engine::shuffle(&mut queue);
-            engine.send(Command::Play { queue, index: 0 });
+            player(station, engine, Command::Play { queue, index: 0 });
         }
-        Action::Toggle => engine.send(Command::Toggle),
-        Action::Next => engine.send(Command::Next),
-        Action::Previous => engine.send(Command::Previous),
+        Action::Toggle => player(station, engine, Command::Toggle),
+        Action::Next => player(station, engine, Command::Next),
+        Action::Previous => player(station, engine, Command::Previous),
+        Action::Connect(device) => {
+            let device = device.and_then(|at| station.peek().connect.devices.get(at).cloned());
+            connect(device);
+        }
+        Action::EditField => crate::screens::devices::edit(),
         Action::Go(_) => {}
         Action::Open(collection) => open(station, collection),
         Action::SeekBy(seconds) => {
@@ -317,15 +479,23 @@ fn perform(station: Station, engine: &Engine, action: Action) {
         Action::SignOut => sign_out(station, engine),
         Action::ToggleShuffle => {
             let mut station = station;
-            let mut state = station.write_channel(Channel::Now);
-            state.now.shuffle = !state.now.shuffle;
-            engine.send(Command::Shuffle(state.now.shuffle));
+            let (shuffle, repeat) = {
+                let mut state = station.write_channel(Channel::Now);
+                state.now.shuffle = !state.now.shuffle;
+                (state.now.shuffle, state.now.repeat)
+            };
+            crate::connect::modes(shuffle, repeat);
+            player(station, engine, Command::Shuffle(shuffle));
         }
         Action::CycleRepeat => {
             let mut station = station;
-            let mut state = station.write_channel(Channel::Now);
-            state.now.repeat = state.now.repeat.next();
-            engine.send(Command::Repeat(state.now.repeat));
+            let (shuffle, repeat) = {
+                let mut state = station.write_channel(Channel::Now);
+                state.now.repeat = state.now.repeat.next();
+                (state.now.shuffle, state.now.repeat)
+            };
+            crate::connect::modes(shuffle, repeat);
+            player(station, engine, Command::Repeat(repeat));
         }
         Action::EditSearch => crate::screens::search::edit(),
         Action::ClearSearch => {

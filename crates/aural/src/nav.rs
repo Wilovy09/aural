@@ -34,6 +34,10 @@ pub enum Action {
     ClearSearch,
     /// Move this many seconds through the song, back when negative.
     SeekBy(i64),
+    /// Play on the found device at this place, or on this device again with `None`.
+    Connect(Option<usize>),
+    /// Give the devices page's field the keyboard.
+    EditField,
 }
 
 /// The arrow keys, OK and Back, whatever the device calls them.
@@ -78,6 +82,8 @@ pub enum Target {
     Transport(usize),
     /// Back, for screens a finger has no other way out of.
     Back,
+    /// The devices to play on.
+    Devices,
 }
 
 /// A tap: the focus moves onto `target` and OK is pressed there.
@@ -107,6 +113,10 @@ pub fn tap(state: &mut AppState, target: Target, columns: usize) -> Action {
             state.focus.full_button = at;
         }
         Target::Back => return press(state, Press::Back, columns),
+        Target::Devices => {
+            open_devices(state);
+            return Action::None;
+        }
     }
     press(state, Press::Ok, columns)
 }
@@ -251,6 +261,9 @@ fn content(state: &mut AppState, press: Press, columns: usize) -> Action {
     if matches!(state.page, Page::Artist(_)) {
         return artist(state, press);
     }
+    if state.page == Page::Devices {
+        return devices(state, press);
+    }
     let actions = state.actions();
     let rows = state.songs().map_or(0, <[Song]>::len);
     let cards = state.cards().map_or(0, <[Collection]>::len);
@@ -334,7 +347,8 @@ fn player(state: &mut AppState, press: Press) -> Action {
         Press::Left => *at = at.saturating_sub(1),
         Press::Right => *at = (*at + 1).min(PLAYER_BUTTONS - 1),
         Press::Up => enter_content(state),
-        Press::Ok if *at == 3 => {
+        Press::Ok if *at == 3 => open_devices(state),
+        Press::Ok if *at == 4 => {
             if state.now.song.is_some() {
                 state.fullscreen = true;
                 state.focus.full_row = 1;
@@ -353,6 +367,43 @@ fn player_action(button: usize) -> Action {
         1 => Action::Toggle,
         _ => Action::Next,
     }
+}
+
+/// Opens the devices page from wherever the player is, the fullscreen one included.
+fn open_devices(state: &mut AppState) {
+    state.fullscreen = false;
+    if state.page != Page::Devices {
+        let from = std::mem::replace(&mut state.page, Page::Devices);
+        state.history.push(from);
+    }
+    state.focus.zone = Zone::Content;
+    state.focus.content = Spot::Row(0);
+}
+
+/// The devices page: the field on top, then this device and the ones found, one a row.
+fn devices(state: &mut AppState, press: Press) -> Action {
+    let rows = 1 + state.connect.devices.len();
+    let spot = state.focus.content;
+    let next = match (spot, press) {
+        (Spot::Action(_), Press::Down) => Spot::Row(0),
+        (Spot::Action(_), Press::Ok) => return Action::EditField,
+        (Spot::Row(0), Press::Up) => Spot::Action(0),
+        (Spot::Row(row), Press::Up) => Spot::Row(row - 1),
+        (Spot::Row(row), Press::Down) if row + 1 < rows => Spot::Row(row + 1),
+        (Spot::Row(0), Press::Ok) => return Action::Connect(None),
+        (Spot::Row(row), Press::Ok) => return Action::Connect(Some(row - 1)),
+        (_, Press::Left) => {
+            state.focus.zone = Zone::Sidebar;
+            return Action::None;
+        }
+        (_, Press::Down) => {
+            state.focus.zone = Zone::Player;
+            return Action::None;
+        }
+        _ => spot,
+    };
+    state.focus.content = next;
+    Action::None
 }
 
 /// Moves into the content area, onto the spot it held or the page's first one.
@@ -377,6 +428,7 @@ pub fn first(state: &AppState) -> Spot {
 fn valid(state: &AppState, spot: Spot) -> bool {
     match spot {
         Spot::Action(i) => i < state.actions(),
+        Spot::Row(r) if state.page == Page::Devices => r <= state.connect.devices.len(),
         Spot::Row(r) => state.songs().is_some_and(|songs| r < songs.len()),
         Spot::Card(c) => state.cards().is_some_and(|cards| c < cards.len()),
         Spot::Chip(at) => at < Filter::ALL.len(),

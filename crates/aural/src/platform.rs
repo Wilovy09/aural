@@ -7,10 +7,15 @@ use std::path::PathBuf;
 pub fn data_dir() -> PathBuf {
     #[cfg(target_os = "android")]
     let dir = crate::login::data_dir().unwrap_or_else(std::env::temp_dir);
+    // A second copy on one computer (to try Aural Connect) can keep its own folder.
     #[cfg(not(target_os = "android"))]
-    let dir = dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("aural");
+    let dir = std::env::var_os("AURAL_DATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("aural")
+        });
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -26,4 +31,20 @@ pub fn keep_awake(awake: bool) {
     }
     #[cfg(not(target_os = "android"))]
     let _ = awake;
+}
+
+/// Holds Wi-Fi's multicast lock, without which Android drops the mDNS announcements of the
+/// other devices.
+#[cfg(target_os = "android")]
+pub fn multicast() -> anyhow::Result<()> {
+    crate::login::with_java(|env, activity| {
+        let class = crate::login::helper(env, activity, "dev.aural.app.Network")?;
+        env.call_static_method(
+            &class,
+            "multicast",
+            "(Landroid/app/Activity;)V",
+            &[jni::objects::JValue::Object(activity)],
+        )?;
+        Ok(())
+    })
 }

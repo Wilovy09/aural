@@ -450,6 +450,7 @@ fn phone(parts: Phone) -> impl IntoElement {
                             .spacing(10.)
                             .child(glass(Icon::Close, Target::Back, false))
                             .child(rect().width(Size::flex(1.)))
+                            .child(glass(Icon::Cast, Target::Devices, false))
                             .child(glass(Icon::Clear, Target::Transport(5), ring(5)))
                             .child(glass(Icon::Night, Target::Transport(6), ring(6))),
                     )

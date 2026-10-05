@@ -51,6 +51,8 @@ pub enum Page {
     Detail(Collection),
     Artist(Collection),
     Account,
+    /// The other Aurals to play on.
+    Devices,
 }
 
 /// The sidebar's entries, top to bottom.
@@ -122,7 +124,7 @@ impl Default for Focus {
 pub const ARTIST_TOP: usize = 5;
 
 /// The player bar's buttons, left to right.
-pub const PLAYER_BUTTONS: usize = 4;
+pub const PLAYER_BUTTONS: usize = 5;
 /// The fullscreen transport's buttons, left to right: shuffle, previous, play, next, repeat,
 /// clear the screen, night mode.
 pub const TRANSPORT_BUTTONS: usize = 7;
@@ -257,6 +259,25 @@ pub struct AppState {
     pub search: Search,
     /// The search field has the keyboard: keys go to it, not to the D-pad navigation.
     pub typing: bool,
+    pub connect: Connect,
+}
+
+/// Aural Connect: the devices around, this device's link to one, a code it shows.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Connect {
+    pub devices: Vec<crate::connect::Device>,
+    pub link: crate::connect::Link,
+    pub pairing: Option<crate::connect::Pairing>,
+}
+
+impl Connect {
+    /// The device this one plays on, when it plays on another.
+    pub fn remote(&self) -> Option<&str> {
+        match &self.link {
+            crate::connect::Link::Connected(name) => Some(name),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Auth {
@@ -315,6 +336,7 @@ impl AppState {
             Page::Account => 2,
             Page::Artist(_) => 2,
             Page::Search => 2,
+            Page::Devices => 1,
             Page::Playlists | Page::Albums => 0,
         }
     }
@@ -331,6 +353,7 @@ pub enum Channel {
     Position,
     Lyrics,
     Search,
+    Connect,
 }
 
 impl RadioChannel<AppState> for Channel {}

@@ -53,7 +53,7 @@ pub enum Command {
 }
 
 /// What happens when a song ends.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Repeat {
     /// Go on through the queue and stop at its end.
     #[default]
@@ -151,6 +151,7 @@ fn run(
     let say = |update: Update| {
         // Android's controls follow from here, so they stay right in the background.
         crate::media::observe(&update);
+        crate::connect::observe(&update);
         let _ = updates.send(update);
     };
 

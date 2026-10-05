@@ -40,7 +40,7 @@ impl Component for PlayerBar {
             .child(
                 rect()
                     .width(Size::flex(1.))
-                    .on_press(press(3))
+                    .on_press(press(4))
                     .child(now_playing(song)),
             )
             .child(
@@ -85,9 +85,15 @@ impl Component for PlayerBar {
                     .width(Size::flex(1.))
                     .direction(Direction::Horizontal)
                     .main_align(Alignment::End)
+                    .spacing(4.)
+                    .child(Casting)
                     .child(
-                        ui::button(Variant::Ghost, Some(Icon::Maximize), None, ring(3))
+                        ui::button(Variant::Ghost, Some(Icon::Cast), None, ring(3))
                             .on_press(press(3)),
+                    )
+                    .child(
+                        ui::button(Variant::Ghost, Some(Icon::Maximize), None, ring(4))
+                            .on_press(press(4)),
                     ),
             )
     }
@@ -102,6 +108,9 @@ impl Component for MiniPlayer {
     fn render(&self) -> impl IntoElement {
         let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
         let now = use_radio::<AppState, Channel>(Channel::Now);
+        let connect = use_radio::<AppState, Channel>(Channel::Connect);
+        let remote = connect.read().connect.remote().map(str::to_owned);
+        let remote_on = remote.is_some();
         let focus = navigation.read().focus;
         let ring = |button: usize| focus.zone == Zone::Player && focus.player == button;
         let state = now.read();
@@ -114,8 +123,8 @@ impl Component for MiniPlayer {
         rect()
             .width(Size::fill())
             .background(color::SECONDARY)
-            .border(ui::focus_border(ring(3)))
-            .on_press(ui::tap(Target::Player(3)))
+            .border(ui::focus_border(ring(4)))
+            .on_press(ui::tap(Target::Player(4)))
             .child(Line)
             .child(
                 rect()
@@ -140,9 +149,29 @@ impl Component for MiniPlayer {
                                     .width(Size::fill()),
                             )
                             .child(
-                                ui::line(song.artist, text::SMALL, color::MUTED_FOREGROUND)
-                                    .width(Size::fill()),
+                                ui::line(
+                                    match remote {
+                                        Some(name) => format!("Reproduciendo en {name}"),
+                                        None => song.artist,
+                                    },
+                                    text::SMALL,
+                                    match remote_on {
+                                        true => color::FOCUS_ON_PRIMARY,
+                                        false => color::MUTED_FOREGROUND,
+                                    },
+                                )
+                                .width(Size::fill()),
                             ),
+                    )
+                    .child(
+                        rect()
+                            .width(Size::px(44.))
+                            .height(Size::px(48.))
+                            .center()
+                            .corner_radius(22.)
+                            .border(ui::focus_border(ring(3)))
+                            .on_press(ui::tap(Target::Player(3)))
+                            .child(ui::icon(Icon::Cast, 20., color::MUTED_FOREGROUND)),
                     )
                     .child(
                         rect()
@@ -163,6 +192,30 @@ impl Component for MiniPlayer {
                     ),
             )
             .into_element()
+    }
+}
+
+/// "Reproduciendo en …" beside the player bar's buttons, while another device plays.
+#[derive(PartialEq)]
+struct Casting;
+
+impl Component for Casting {
+    fn render(&self) -> impl IntoElement {
+        let connect = use_radio::<AppState, Channel>(Channel::Connect);
+        let remote = connect.read().connect.remote().map(str::to_owned);
+        rect()
+            .main_align(Alignment::Center)
+            .height(Size::px(metrics::CONTROL))
+            .map(remote, |casting, name| {
+                casting.child(
+                    ui::line(
+                        format!("Reproduciendo en {name}"),
+                        text::SMALL,
+                        color::FOCUS_ON_PRIMARY,
+                    )
+                    .font_weight(FontWeight::SEMI_BOLD),
+                )
+            })
     }
 }
 
