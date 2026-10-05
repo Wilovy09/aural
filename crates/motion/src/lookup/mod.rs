@@ -131,6 +131,54 @@ impl MotionSearch {
         self.album(&album).await
     }
 
+    /// The still artwork of the catalog song `query` names, as the catalog's url template with
+    /// `{w}` and `{h}` for the size, or `None` when no song is a close enough match.
+    pub async fn artwork(&self, query: &MotionQuery) -> Result<Option<String>> {
+        Ok(self.best(query).await?.and_then(|song| song.artwork))
+    }
+
+    /// The still artwork of the catalog album named `title` by `artist`, as a url template, or
+    /// `None` when no album of that name and artist is found.
+    pub async fn album_artwork(&self, title: &str, artist: &str) -> Result<Option<String>> {
+        let term = format!("{} {artist}", searchable(title));
+        let path = format!("/catalog/{}/search", self.storefront);
+        let answered = self
+            .get(
+                &path,
+                &[
+                    ("term", term.trim()),
+                    ("types", "albums"),
+                    ("limit", RESULTS),
+                ],
+            )
+            .await?;
+        let Some(answered) = answered else {
+            return Ok(None);
+        };
+        let (title, artist) = (matching::normalize(title), matching::normalize(artist));
+        let found = answered
+            .pointer("/results/albums/data")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| row.get("attributes"))
+            .find(|attributes| {
+                let text = |key: &str| {
+                    matching::normalize(
+                        attributes
+                            .get(key)
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+                };
+                let name = text("name");
+                (name == title || name.starts_with(&title) || title.starts_with(&name))
+                    && (artist.is_empty() || text("artistName").contains(&artist))
+            })
+            .and_then(matching::artwork);
+        Ok(found)
+    }
+
     /// Downloads the H.264 rendition whose side covers `edge` physical pixels.
     pub async fn fetch(&self, art: &MotionArt, edge: u32) -> Result<Loop> {
         playlist::fetch(&self.http, &art.master, edge).await
@@ -138,6 +186,11 @@ impl MotionSearch {
 
     /// The album id of the best scoring catalog song for `query`.
     async fn search(&self, query: &MotionQuery) -> Result<Option<String>> {
+        Ok(self.best(query).await?.map(|song| song.album_id))
+    }
+
+    /// The best scoring catalog song for `query`.
+    async fn best(&self, query: &MotionQuery) -> Result<Option<matching::Song>> {
         // Brackets such as "(Official Video)" would narrow the search; scoring still sees them.
         let term = format!("{} {}", searchable(&query.title), query.artist);
         let path = format!("/catalog/{}/search", self.storefront);
@@ -154,7 +207,7 @@ impl MotionSearch {
         let Some(answered) = answered else {
             return Ok(None);
         };
-        let songs = answered
+        let mut songs = answered
             .pointer("/results/songs/data")
             .and_then(Value::as_array)
             .map(|rows| {
@@ -177,7 +230,8 @@ impl MotionSearch {
                 query.artist
             );
         }
-        Ok(best.map(|song| song.album_id.clone()))
+        let index = best.and_then(|best| songs.iter().position(|song| std::ptr::eq(song, best)));
+        Ok(index.map(|index| songs.swap_remove(index)))
     }
 
     /// The motion artwork of catalog album `id`, read from its `editorialVideo`.

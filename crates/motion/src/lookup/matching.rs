@@ -27,6 +27,8 @@ const STOPWORDS: &[&str] = &[
 #[derive(Debug)]
 pub(super) struct Song {
     pub album_id: String,
+    /// The catalog's artwork url template, with `{w}` and `{h}` for the size.
+    pub artwork: Option<String>,
     name: String,
     artist: String,
     album: String,
@@ -51,6 +53,7 @@ impl Song {
             .or_else(|| album_from_url(&text("url")))?;
         Some(Self {
             album_id,
+            artwork: artwork(attributes),
             name: text("name"),
             artist: text("artistName"),
             album: text("albumName"),
@@ -60,6 +63,15 @@ impl Song {
                 .map(Duration::from_millis),
         })
     }
+}
+
+/// The artwork url template of a catalog row's attributes.
+pub(super) fn artwork(attributes: &Value) -> Option<String> {
+    attributes
+        .pointer("/artwork/url")
+        .and_then(Value::as_str)
+        .filter(|url| url.starts_with("https://"))
+        .map(str::to_owned)
 }
 
 /// The best scoring song for the wanted title and artist, if any clears [`THRESHOLD`].
