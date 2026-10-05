@@ -1,0 +1,351 @@
+//! The app's root: it owns the state station, restores the session, runs the engine, turns
+//! keys into navigation and actions, and lays out the shell.
+
+use std::sync::{Arc, RwLock};
+
+use freya::prelude::*;
+use freya::radio::{RadioStation, use_init_radio_station, use_radio};
+use ytmusic::YtMusic;
+
+use crate::chrome::{player_bar::PlayerBar, sidebar::Sidebar};
+use crate::engine::{Command, Engine, Update};
+use crate::library::{self, Collection};
+use crate::nav::{self, Action, Press};
+use crate::screens::{
+    account::{Account, SignIn},
+    cards::Cards,
+    fullscreen::Fullscreen,
+    songs::Songs,
+};
+use crate::session::{self, Session};
+use crate::state::{AppState, Auth, Channel, Load, Page, Zone};
+use crate::{runtime, ui};
+
+type Station = RadioStation<AppState, Channel>;
+
+/// The client every request goes through; swapped when signing in or out.
+static CLIENT: RwLock<Option<Arc<YtMusic>>> = RwLock::new(None);
+
+pub fn client() -> Arc<YtMusic> {
+    CLIENT
+        .read()
+        .ok()
+        .and_then(|held| held.clone())
+        .unwrap_or_else(|| Session::guest().api)
+}
+
+fn set_client(api: Arc<YtMusic>, engine: &Engine) {
+    if let Ok(mut held) = CLIENT.write() {
+        *held = Some(api.clone());
+    }
+    engine.send(Command::Client(api));
+}
+
+pub fn app() -> impl IntoElement {
+    let station = use_init_radio_station::<AppState, Channel>(|| AppState {
+        motion: crate::settings::load().motion,
+        ..AppState::default()
+    });
+    let auth = use_radio::<AppState, Channel>(Channel::Auth);
+    let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
+
+    let engine = use_hook(move || boot(station));
+
+    let on_key = {
+        let engine = engine.clone();
+        move |event: Event<KeyboardEventData>| {
+            let Some(press) = Press::from_key(&event.key) else {
+                return;
+            };
+            let signed_in = matches!(station.peek().auth, Auth::SignedIn(_));
+            if !signed_in {
+                if press == Press::Ok && matches!(station.peek().auth, Auth::SignedOut { .. }) {
+                    sign_in(station, engine.clone());
+                }
+                return;
+            }
+            // The search field has the keyboard: only Back reaches the navigation, to leave it.
+            if station.peek().typing {
+                if press == Press::Back {
+                    crate::screens::search::leave();
+                }
+                return;
+            }
+            let columns = ui::columns();
+            let action = {
+                let mut station = station;
+                let mut state = station.write_channel(Channel::Navigation);
+                nav::press(&mut state, press, columns)
+            };
+            perform(station, &engine, action);
+        }
+    };
+
+    let signed_in = matches!(auth.read().auth, Auth::SignedIn(_));
+    let fullscreen = navigation.read().fullscreen;
+    let page = navigation.read().page.clone();
+
+    rect()
+        .expanded()
+        .background(ui::color::BACKGROUND)
+        .color(ui::color::FOREGROUND)
+        .on_global_key_down(on_key)
+        .child(match (signed_in, fullscreen) {
+            (false, _) => SignIn.into_element(),
+            (true, true) => Fullscreen.into_element(),
+            (true, false) => rect()
+                .expanded()
+                .content(Content::Flex)
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::flex(1.))
+                        .direction(Direction::Horizontal)
+                        .content(Content::Flex)
+                        .child(Sidebar)
+                        .child(rect().width(Size::flex(1.)).height(Size::fill()).child(
+                            match page {
+                                Page::Songs | Page::Detail(_) => Songs.into_element(),
+                                Page::Artist(_) => crate::screens::artist::Artist.into_element(),
+                                Page::Playlists | Page::Albums => Cards.into_element(),
+                                Page::Account => Account.into_element(),
+                                Page::Search => crate::screens::search::Search.into_element(),
+                            },
+                        )),
+                )
+                .child(PlayerBar)
+                .into_element(),
+        })
+}
+
+/// Starts the engine and restores the saved account; returns the engine handle.
+fn boot(station: Station) -> Engine {
+    let (updates, mut inbox) = tokio::sync::mpsc::unbounded_channel();
+    let engine = Engine::start(client(), updates);
+
+    let mut playback = station;
+    spawn(async move {
+        while let Some(update) = inbox.recv().await {
+            apply(&mut playback, update);
+        }
+    });
+
+    let engine_for_restore = engine.clone();
+    let mut auth = station;
+    spawn(async move {
+        let restored = runtime::spawn(session::restore()).await.ok();
+        match restored {
+            Some(Ok(Some(session))) => {
+                set_client(session.api.clone(), &engine_for_restore);
+                auth.write_channel(Channel::Auth).auth = Auth::SignedIn(session.account.clone());
+                load_library(station);
+            }
+            Some(Ok(None)) | None => {
+                auth.write_channel(Channel::Auth).auth = Auth::SignedOut { error: None };
+            }
+            Some(Err(error)) => {
+                auth.write_channel(Channel::Auth).auth = Auth::SignedOut {
+                    error: Some(format!("{error:#}")),
+                };
+            }
+        }
+    });
+    engine
+}
+
+/// Applies one engine update to the state.
+fn apply(station: &mut Station, update: Update) {
+    match update {
+        Update::Loading(song) => {
+            crate::sheets::look_up(*station, song.clone());
+            let mut state = station.write_channel(Channel::Now);
+            state.now.song = Some(song);
+            state.now.loading = true;
+            state.now.error = None;
+        }
+        Update::Playing(playing) => {
+            crate::platform::keep_awake(playing);
+            let mut state = station.write_channel(Channel::Now);
+            state.now.loading = false;
+            state.now.playing = playing;
+        }
+        Update::Position(elapsed, total) => {
+            let mut state = station.write_channel(Channel::Position);
+            state.position.elapsed = elapsed;
+            state.position.total = total;
+        }
+        Update::Queue(queue, index) => {
+            let mut state = station.write_channel(Channel::Now);
+            state.now.queue = queue;
+            state.now.index = index;
+        }
+        Update::Stopped => {
+            crate::platform::keep_awake(false);
+            station.write_channel(Channel::Now).now.playing = false;
+        }
+        Update::Error(error) => {
+            let mut state = station.write_channel(Channel::Now);
+            state.now.loading = false;
+            state.now.error = Some(error);
+        }
+    }
+}
+
+/// Does what a key press asked beyond moving the focus.
+fn perform(station: Station, engine: &Engine, action: Action) {
+    match action {
+        Action::None => {}
+        Action::Play { queue, index } => engine.send(Command::Play { queue, index }),
+        Action::Shuffle(mut queue) => {
+            crate::engine::shuffle(&mut queue);
+            engine.send(Command::Play { queue, index: 0 });
+        }
+        Action::Toggle => engine.send(Command::Toggle),
+        Action::Next => engine.send(Command::Next),
+        Action::Previous => engine.send(Command::Previous),
+        Action::Go(_) => {}
+        Action::Open(collection) => open(station, collection),
+        Action::SignIn => sign_in(station, engine.clone()),
+        Action::SignOut => sign_out(station, engine),
+        Action::ToggleShuffle => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Now);
+            state.now.shuffle = !state.now.shuffle;
+            engine.send(Command::Shuffle(state.now.shuffle));
+        }
+        Action::CycleRepeat => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Now);
+            state.now.repeat = state.now.repeat.next();
+            engine.send(Command::Repeat(state.now.repeat));
+        }
+        Action::EditSearch => crate::screens::search::edit(),
+        Action::ClearSearch => {
+            let mut station = station;
+            station.write_channel(Channel::Search).search = Default::default();
+            station.write_channel(Channel::Navigation).focus.content =
+                crate::state::Spot::Action(0);
+        }
+        Action::ToggleMotion => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Navigation);
+            state.motion = !state.motion;
+            crate::settings::save(crate::settings::Settings {
+                motion: state.motion,
+            });
+        }
+    }
+}
+
+/// Loads the library into the state.
+fn load_library(mut station: Station) {
+    station.write_channel(Channel::Library).library = Load::Loading;
+    spawn(async move {
+        let api = client();
+        let loaded = runtime::spawn(async move { library::load(&api).await }).await;
+        station.write_channel(Channel::Library).library = match loaded {
+            Ok(Ok(library)) => Load::Ready(library),
+            Ok(Err(error)) => Load::Failed(format!("{error:#}")),
+            Err(error) => Load::Failed(error.to_string()),
+        };
+        // The content may have been entered before anything loaded.
+        let mut state = station.write_channel(Channel::Navigation);
+        if state.focus.zone == Zone::Content {
+            state.focus.content = nav::first(&state);
+        }
+    });
+}
+
+/// Shows a playlist or album and loads its tracks.
+fn open(mut station: Station, collection: Collection) {
+    {
+        let mut state = station.write_channel(Channel::Navigation);
+        nav::open(&mut state, collection.clone());
+    }
+    if collection.kind == library::Kind::Artist {
+        return open_artist(station, collection);
+    }
+    station.write_channel(Channel::Detail).detail = Load::Loading;
+    spawn(async move {
+        let api = client();
+        let wanted = collection.clone();
+        let loaded = runtime::spawn(async move { library::tracks(&api, &wanted).await }).await;
+        let still_open = matches!(&station.peek().page, Page::Detail(open) if *open == collection);
+        if !still_open {
+            return;
+        }
+        station.write_channel(Channel::Detail).detail = match loaded {
+            Ok(Ok(songs)) => Load::Ready(songs),
+            Ok(Err(error)) => Load::Failed(format!("{error:#}")),
+            Err(error) => Load::Failed(error.to_string()),
+        };
+    });
+}
+
+/// Loads an artist's page into the state.
+fn open_artist(mut station: Station, artist: Collection) {
+    station.write_channel(Channel::Detail).artist = Load::Loading;
+    spawn(async move {
+        let api = client();
+        let id = artist.id.clone();
+        let loaded = runtime::spawn(async move { library::artist_page(&api, &id).await }).await;
+        let still_open = matches!(&station.peek().page, Page::Artist(open) if *open == artist);
+        if !still_open {
+            return;
+        }
+        station.write_channel(Channel::Detail).artist = match loaded {
+            Ok(Ok(page)) => Load::Ready(page),
+            Ok(Err(error)) => Load::Failed(format!("{error:#}")),
+            Err(error) => Load::Failed(error.to_string()),
+        };
+    });
+}
+
+/// Opens the sign-in window and, when it brings an account back, loads its library.
+fn sign_in(mut station: Station, engine: Engine) {
+    station.write_channel(Channel::Auth).auth = Auth::SigningIn("Abriendo Google…".into());
+    let (steps, mut heard) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let mut progress = station;
+    spawn(async move {
+        while let Some(step) = heard.recv().await {
+            progress.write_channel(Channel::Auth).auth = Auth::SigningIn(step);
+        }
+    });
+    spawn(async move {
+        let result = runtime::blocking(move || {
+            session::sign_in(&|step: String| {
+                let _ = steps.send(step);
+            })
+        })
+        .await;
+        match result {
+            Ok(Ok(session)) => {
+                set_client(session.api.clone(), &engine);
+                station.write_channel(Channel::Auth).auth = Auth::SignedIn(session.account.clone());
+                {
+                    let mut state = station.write_channel(Channel::Navigation);
+                    nav::go(&mut state, Page::Songs);
+                    state.focus.zone = Zone::Sidebar;
+                }
+                load_library(station);
+            }
+            Ok(Err(error)) => {
+                station.write_channel(Channel::Auth).auth = Auth::SignedOut {
+                    error: Some(format!("{error:#}")),
+                };
+            }
+            Err(error) => {
+                station.write_channel(Channel::Auth).auth = Auth::SignedOut {
+                    error: Some(error.to_string()),
+                };
+            }
+        }
+    });
+}
+
+fn sign_out(mut station: Station, engine: &Engine) {
+    session::sign_out();
+    set_client(Session::guest().api, engine);
+    station.write_channel(Channel::Library).library = Load::Idle;
+    station.write_channel(Channel::Auth).auth = Auth::SignedOut { error: None };
+}

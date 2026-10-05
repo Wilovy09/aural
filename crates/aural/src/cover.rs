@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result};
 use freya::engine::prelude::{
     AlphaType, ClipOp, ColorType, FilterMode, ImageInfo, MipmapMode, Paint, SamplingOptions,
-    SkData, SkImage, SkRRect, SkRect, raster_from_data,
+    SkData, SkRRect, SkRect, raster_from_data,
 };
 use freya::prelude::*;
 use tokio::sync::watch;
@@ -21,16 +21,13 @@ const RATE_EVERY: Duration = Duration::from_secs(5);
 /// The latest decoded frame, shared with the UI.
 pub type Latest = watch::Sender<Option<Arc<motion::Frame>>>;
 
-/// Looks up the motion artwork of the album `title` by `artist` belongs to and, when there is
-/// one, downloads and decodes it on its own thread. Steps go to `say`, frames to `frames`.
-pub fn start(
-    title: &str,
-    artist: &str,
-    duration: Option<Duration>,
-    frames: Latest,
-    say: impl Fn(String) + Send + 'static,
-) {
-    let query = motion::MotionQuery::new(title, artist, None, duration);
+/// Looks up the motion artwork of `song`'s album and, when there is one, downloads and
+/// decodes it on its own thread. Steps go to `say`, frames to `frames`.
+pub fn start(song: &crate::library::Song, frames: Latest, say: impl Fn(String) + Send + 'static) {
+    // Apple's catalog matches on the lead artist and the album, as Sonora asks it: the joined
+    // artists or a missing album make most songs miss.
+    let artist = song.artist.split(", ").next().unwrap_or_default();
+    let query = motion::MotionQuery::new(&song.title, artist, song.album.as_deref(), song.duration);
     std::thread::spawn(move || {
         if let Err(error) = run(&query, &say, &frames) {
             say(format!("sin animated cover: {error:#}"));
@@ -94,10 +91,9 @@ fn folder() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// What the cover square shows: the still cover, or the latest motion frame once one exists.
+/// What the cover square shows: the latest motion frame.
 #[derive(Clone)]
 pub enum Art {
-    Still(Arc<Vec<u8>>),
     Motion(Arc<motion::Frame>),
 }
 
@@ -112,7 +108,6 @@ pub fn view(art: Option<Art>, number: u64, side: f32) -> impl IntoElement {
         .maybe_child(art.map(|art| {
             canvas(RenderCallback::new(move |context: &mut CanvasContext| {
                 let image = match &art {
-                    Art::Still(bytes) => SkImage::from_encoded(SkData::new_copy(bytes)),
                     Art::Motion(frame) => {
                         let info = ImageInfo::new(
                             (frame.width as i32, frame.height as i32),
