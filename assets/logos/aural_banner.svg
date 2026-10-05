@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" fill="none">
+  <defs>
+    <linearGradient id="aural-bg" x1="0" y1="0" x2="640" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#19C6A7"/>
+      <stop offset="0.5" stop-color="#6C4DFF"/>
+      <stop offset="1" stop-color="#FF4F9A"/>
+    </linearGradient>
+    <radialGradient id="aural-glow" cx="15%" cy="15%" r="70%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Fondo a sangre (sin esquinas redondeadas, Android TV las aplica) -->
+  <rect width="640" height="360" fill="url(#aural-bg)"/>
+  <rect width="640" height="360" fill="url(#aural-glow)"/>
+
+  <!-- Símbolo -->
+  <g transform="translate(16.4 30) scale(0.6)">
+    <g transform="translate(0 20)" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M126 340V250A130 130 0 0 1 386 250V340" stroke-width="24" opacity="0.35"/>
+      <path d="M176 340V250A80 80 0 0 1 336 250V340" stroke-width="40"/>
+      <circle cx="256" cy="318" r="30" fill="#FFFFFF" stroke="none"/>
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="290" y="217" fill="#FFFFFF" font-family="Outfit, Sora, 'Plus Jakarta Sans', Poppins, 'Segoe UI', Arial, sans-serif" font-size="104" font-weight="700" letter-spacing="-2" textLength="290" lengthAdjust="spacingAndGlyphs">Aural</text>
+</svg>

@@ -1,8 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- assets/logos/aural_banner.svg as a vector drawable, the wordmark outlined from Outfit Bold. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="320dp" android:height="180dp"
-    android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#0C0C10" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#FF5C7A" android:pathData="M60,120h12v-50h-12z M80,120h12v-70h-12z M100,120h12v-84h-12z M120,120h12v-60h-12z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M160,70h100v12h-100z M160,94h70v10h-70z" />
+    android:viewportWidth="640" android:viewportHeight="360">
+    <path android:pathData="M0,0h640v360h-640z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="0" android:startY="0"
+                    android:endX="640" android:endY="360">
+                    <item android:offset="0" android:color="#FF19C6A7" />
+                    <item android:offset="0.5" android:color="#FF6C4DFF" />
+                    <item android:offset="1" android:color="#FFFF4F9A" />
+                </gradient>
+            </aapt:attr>
+    </path>
+    <path android:pathData="M0,0h640v360h-640z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="96" android:centerY="54"
+                    android:gradientRadius="363">
+                    <item android:offset="0" android:color="#4DFFFFFF" />
+                    <item android:offset="1" android:color="#00FFFFFF" />
+                </gradient>
+            </aapt:attr>
+    </path>
+    <group
+        android:scaleX="0.6" android:scaleY="0.6"
+        android:translateX="16.4" android:translateY="42">
+        <path
+            android:pathData="M126,340V250A130,130 0,0 1,386 250V340"
+            android:strokeWidth="24"
+            android:strokeAlpha="0.35"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M176,340V250A80,80 0,0 1,336 250V340"
+            android:strokeWidth="40"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M226,318a30,30 0,1 0,60 0a30,30 0,1 0,-60 0z" />
+    </group>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M291.75 217 324.28 143.58H340.82L373.06 217H353.74L329.12 156.06H335.75L310.72 217ZM310.26 203.74V190.43H355.02V203.74ZM404 218.14Q396.28 218.14 390.28 215.28Q384.27 212.42 380.86 207.36Q377.46 202.3 377.46 195.74V166.46H395.27V195.58Q395.27 198.18 396.31 200.07Q397.35 201.95 399.34 202.98Q401.32 204 404.02 204Q408.02 204 410.35 201.76Q412.68 199.52 412.68 195.58V166.46H430.49V195.73Q430.49 202.39 427.11 207.43Q423.73 212.48 417.77 215.31Q411.81 218.14 404 218.14ZM439.42 217V166.46H457.24V217ZM457.24 189.28 449.73 184.08Q451.94 175.19 457.24 170.3Q462.53 165.42 471.73 165.42Q475.8 165.42 478.92 166.51Q482.03 167.6 484.36 169.89L473.77 181.85Q472.6 180.7 470.88 180.11Q469.16 179.51 466.9 179.51Q462.47 179.51 459.85 181.94Q457.24 184.37 457.24 189.28ZM512.51 218.04Q504.71 218.04 498.57 214.61Q492.42 211.18 488.9 205.25Q485.38 199.32 485.38 191.78Q485.38 184.19 488.9 178.23Q492.42 172.28 498.57 168.85Q504.71 165.42 512.51 165.42Q518.21 165.42 522.81 167.39Q527.41 169.37 530.29 172.85Q533.17 176.34 533.58 180.81V202.65Q533.17 207.12 530.32 210.6Q527.47 214.09 522.84 216.06Q518.21 218.04 512.51 218.04ZM516.11 203.69Q521.82 203.69 525.31 200.33Q528.8 196.98 528.8 191.73Q528.8 188.19 527.23 185.51Q525.66 182.84 522.81 181.3Q519.96 179.77 516.17 179.77Q512.45 179.77 509.6 181.3Q506.74 182.84 505.08 185.54Q503.43 188.24 503.43 191.73Q503.43 195.21 505.06 197.92Q506.69 200.62 509.57 202.15Q512.45 203.69 516.11 203.69ZM528.05 217V203.43L530.72 191.1L528.05 178.88V166.46H545.57V217ZM555.9 217V141.5H573.71V217Z" />
 </vector>
