@@ -4,11 +4,14 @@ use freya::prelude::*;
 use freya::radio::use_radio;
 
 use crate::library::Collection;
+use crate::nav::Target;
 use crate::state::{AppState, Channel, Load, Page, Spot, Zone};
 use crate::ui::{self, Cover, color, metrics, text};
 
 /// Height of one grid row: the cover, two lines of text and the gap.
-pub(crate) const ROW: f32 = metrics::CARD + 60.;
+pub(crate) fn row() -> f32 {
+    ui::card() + 60.
+}
 
 #[derive(PartialEq)]
 pub struct Cards;
@@ -23,7 +26,7 @@ impl Component for Cards {
             _ => "Playlists",
         };
         let focused = match state.focus.content {
-            Spot::Card(card) if state.focus.zone == Zone::Content => Some(card),
+            Spot::Card(card) if state.focus.zone == Zone::Content && !ui::touch() => Some(card),
             _ => None,
         };
         let page = state.page.clone();
@@ -41,9 +44,10 @@ impl Component for Cards {
         let view = height - metrics::PLAYER_BAR - metrics::INSET * 3.;
         let scroll = ui::use_follow(ui::follow_offset(
             focused.map_or(0, |card| card / columns),
-            ROW,
+            row(),
             view,
         ));
+        let inset = ui::inset();
         let status = match &load {
             Load::Loading | Load::Idle => Some("Cargando…".to_string()),
             Load::Failed(error) => Some(error.clone()),
@@ -53,7 +57,7 @@ impl Component for Cards {
 
         rect()
             .expanded()
-            .padding((metrics::INSET, metrics::INSET, 0., metrics::INSET))
+            .padding((inset, inset, 0., inset))
             .spacing(16.)
             .content(Content::Flex)
             .child(
@@ -67,15 +71,15 @@ impl Component for Cards {
                 // to know when to redraw.
                 VirtualScrollView::new_with_data_controlled(
                     (cards, focused, columns),
-                    |row, (cards, focused, columns)| {
+                    |line, (cards, focused, columns)| {
                         let (focused, columns) = (*focused, *columns);
                         rect()
-                            .key(row)
-                            .height(Size::px(ROW))
+                            .key(line)
+                            .height(Size::px(row()))
                             .direction(Direction::Horizontal)
-                            .spacing(metrics::CARD_GAP)
+                            .spacing(ui::gap())
                             .children((0..columns).filter_map(|column| {
-                                let index = row * columns + column;
+                                let index = line * columns + column;
                                 let card = cards.get(index)?;
                                 Some(tile(index, card, focused == Some(index)).into_element())
                             }))
@@ -84,7 +88,7 @@ impl Component for Cards {
                     scroll,
                 )
                 .length(rows)
-                .item_size(ROW)
+                .item_size(row())
                 .width(Size::fill())
                 .height(Size::flex(1.)),
             )
@@ -93,21 +97,22 @@ impl Component for Cards {
 
 /// One playlist or album: its cover, title and subtitle.
 pub(crate) fn tile(index: usize, card: &Collection, focused: bool) -> impl IntoElement {
+    let side = ui::card();
     rect()
         .key(index)
-        .width(Size::px(metrics::CARD))
+        .width(Size::px(side))
         .spacing(8.)
+        .on_press(ui::tap(Target::Content(Spot::Card(index))))
         .child(
             rect()
                 .corner_radius(metrics::RADIUS + 3.)
                 .padding(3.)
                 .border(ui::focus_border(focused))
                 .margin(-3.)
-                .child(Cover::new(
-                    card.cover.clone(),
-                    metrics::CARD - 6.,
-                    metrics::RADIUS,
-                )),
+                .child(Cover {
+                    apple: crate::artwork::Wanted::collection(card),
+                    ..Cover::new(card.cover.clone(), side - 6., metrics::RADIUS)
+                }),
         )
         .child(
             ui::line(card.title.clone(), text::BODY, color::FOREGROUND)

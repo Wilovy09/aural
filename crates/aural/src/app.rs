@@ -7,7 +7,11 @@ use freya::prelude::*;
 use freya::radio::{RadioStation, use_init_radio_station, use_radio};
 use ytmusic::YtMusic;
 
-use crate::chrome::{player_bar::PlayerBar, sidebar::Sidebar};
+use crate::chrome::{
+    bottom_bar::BottomBar,
+    player_bar::{MiniPlayer, PlayerBar},
+    sidebar::Sidebar,
+};
 use crate::engine::{Command, Engine, Update};
 use crate::library::{self, Collection};
 use crate::nav::{self, Action, Press};
@@ -34,6 +38,44 @@ pub fn client() -> Arc<YtMusic> {
         .unwrap_or_else(|| Session::guest().api)
 }
 
+thread_local! {
+    /// The station and engine a tap acts on, kept by the root for press handlers anywhere.
+    static TAPS: std::cell::RefCell<Option<(Station, Engine)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Does what the D-pad would on `target`: moves the focus there and presses OK.
+pub fn tap(target: nav::Target) {
+    let Some((mut station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    ui::set_touch(true);
+    if !matches!(station.peek().auth, Auth::SignedIn(_)) {
+        if matches!(station.peek().auth, Auth::SignedOut { .. }) {
+            sign_in(station, engine);
+        }
+        return;
+    }
+    // A tap anywhere but the search field takes the keyboard away from it.
+    if station.peek().typing && target != nav::Target::Content(crate::state::Spot::Action(0)) {
+        crate::screens::search::leave();
+    }
+    let columns = ui::columns();
+    let action = {
+        let mut state = station.write_channel(Channel::Navigation);
+        nav::tap(&mut state, target, columns)
+    };
+    perform(station, &engine, action);
+}
+
+/// Jumps to `to` in the song playing, from the progress bar.
+pub fn seek(to: std::time::Duration) {
+    let Some((mut station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    station.write_channel(Channel::Position).position.elapsed = to;
+    engine.send(Command::Seek(to));
+}
+
 fn set_client(api: Arc<YtMusic>, engine: &Engine) {
     if let Ok(mut held) = CLIENT.write() {
         *held = Some(api.clone());
@@ -50,6 +92,14 @@ pub fn app() -> impl IntoElement {
     let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
 
     let engine = use_hook(move || boot(station));
+    use_hook({
+        let engine = engine.clone();
+        move || TAPS.set(Some((station, engine)))
+    });
+    // A phone starts without focus rings; the first key press brings them back.
+    use_hook(|| ui::set_touch(ui::compact()));
+    #[cfg(target_os = "macos")]
+    use_hook(crate::dock_icon);
 
     let on_key = {
         let engine = engine.clone();
@@ -57,6 +107,13 @@ pub fn app() -> impl IntoElement {
             let Some(press) = Press::from_key(&event.key) else {
                 return;
             };
+            // Back is also the phone's back gesture: it keeps a finger's session ringless.
+            if ui::touch() && press != Press::Back {
+                ui::set_touch(false);
+                // Repaint the focus ring the taps had hidden.
+                let mut station = station;
+                station.write_channel(Channel::Navigation);
+            }
             let signed_in = matches!(station.peek().auth, Auth::SignedIn(_));
             if !signed_in {
                 if press == Press::Ok && matches!(station.peek().auth, Auth::SignedOut { .. }) {
@@ -85,6 +142,56 @@ pub fn app() -> impl IntoElement {
     let fullscreen = navigation.read().fullscreen;
     let page = navigation.read().page.clone();
 
+    let content = match page {
+        Page::Songs | Page::Detail(_) => Songs.into_element(),
+        Page::Artist(_) => crate::screens::artist::Artist.into_element(),
+        Page::Playlists | Page::Albums => Cards.into_element(),
+        Page::Account => Account.into_element(),
+        Page::Search => crate::screens::search::Search.into_element(),
+    };
+    let shell = match ui::compact() {
+        // A phone: the page over a mini player and the bottom bar.
+        true => {
+            let (top, bottom) = ui::safe();
+            rect()
+                .expanded()
+                .content(Content::Flex)
+                .padding((top, 0., 0., 0.))
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::flex(1.))
+                        .child(content),
+                )
+                .child(MiniPlayer)
+                .child(BottomBar)
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::px(bottom))
+                        .background(ui::color::SECONDARY),
+                )
+        }
+        false => rect()
+            .expanded()
+            .content(Content::Flex)
+            .child(
+                rect()
+                    .width(Size::fill())
+                    .height(Size::flex(1.))
+                    .direction(Direction::Horizontal)
+                    .content(Content::Flex)
+                    .child(Sidebar)
+                    .child(
+                        rect()
+                            .width(Size::flex(1.))
+                            .height(Size::fill())
+                            .child(content),
+                    ),
+            )
+            .child(PlayerBar),
+    };
+
     rect()
         .expanded()
         .background(ui::color::BACKGROUND)
@@ -93,28 +200,7 @@ pub fn app() -> impl IntoElement {
         .child(match (signed_in, fullscreen) {
             (false, _) => SignIn.into_element(),
             (true, true) => Fullscreen.into_element(),
-            (true, false) => rect()
-                .expanded()
-                .content(Content::Flex)
-                .child(
-                    rect()
-                        .width(Size::fill())
-                        .height(Size::flex(1.))
-                        .direction(Direction::Horizontal)
-                        .content(Content::Flex)
-                        .child(Sidebar)
-                        .child(rect().width(Size::flex(1.)).height(Size::fill()).child(
-                            match page {
-                                Page::Songs | Page::Detail(_) => Songs.into_element(),
-                                Page::Artist(_) => crate::screens::artist::Artist.into_element(),
-                                Page::Playlists | Page::Albums => Cards.into_element(),
-                                Page::Account => Account.into_element(),
-                                Page::Search => crate::screens::search::Search.into_element(),
-                            },
-                        )),
-                )
-                .child(PlayerBar)
-                .into_element(),
+            (true, false) => shell.into_element(),
         })
 }
 
@@ -122,9 +208,10 @@ pub fn app() -> impl IntoElement {
 fn boot(station: Station) -> Engine {
     let (updates, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     let engine = Engine::start(client(), updates);
+    crate::media::listen(engine.clone());
 
     let mut playback = station;
-    spawn(async move {
+    spawn_forever(async move {
         while let Some(update) = inbox.recv().await {
             apply(&mut playback, update);
         }
@@ -132,7 +219,7 @@ fn boot(station: Station) -> Engine {
 
     let engine_for_restore = engine.clone();
     let mut auth = station;
-    spawn(async move {
+    spawn_forever(async move {
         let restored = runtime::spawn(session::restore()).await.ok();
         match restored {
             Some(Ok(Some(session))) => {
@@ -205,6 +292,19 @@ fn perform(station: Station, engine: &Engine, action: Action) {
         Action::Previous => engine.send(Command::Previous),
         Action::Go(_) => {}
         Action::Open(collection) => open(station, collection),
+        Action::SeekBy(seconds) => {
+            let position = station.peek().position;
+            let to = match seconds < 0 {
+                true => position
+                    .elapsed
+                    .saturating_sub(std::time::Duration::from_secs(seconds.unsigned_abs())),
+                false => position.elapsed + std::time::Duration::from_secs(seconds as u64),
+            };
+            seek(match position.total {
+                Some(total) => to.min(total),
+                None => to,
+            });
+        }
         Action::SignIn => sign_in(station, engine.clone()),
         Action::SignOut => sign_out(station, engine),
         Action::ToggleShuffle => {
@@ -240,7 +340,7 @@ fn perform(station: Station, engine: &Engine, action: Action) {
 /// Loads the library into the state.
 fn load_library(mut station: Station) {
     station.write_channel(Channel::Library).library = Load::Loading;
-    spawn(async move {
+    spawn_forever(async move {
         let api = client();
         let loaded = runtime::spawn(async move { library::load(&api).await }).await;
         station.write_channel(Channel::Library).library = match loaded {
@@ -266,7 +366,7 @@ fn open(mut station: Station, collection: Collection) {
         return open_artist(station, collection);
     }
     station.write_channel(Channel::Detail).detail = Load::Loading;
-    spawn(async move {
+    spawn_forever(async move {
         let api = client();
         let wanted = collection.clone();
         let loaded = runtime::spawn(async move { library::tracks(&api, &wanted).await }).await;
@@ -285,7 +385,7 @@ fn open(mut station: Station, collection: Collection) {
 /// Loads an artist's page into the state.
 fn open_artist(mut station: Station, artist: Collection) {
     station.write_channel(Channel::Detail).artist = Load::Loading;
-    spawn(async move {
+    spawn_forever(async move {
         let api = client();
         let id = artist.id.clone();
         let loaded = runtime::spawn(async move { library::artist_page(&api, &id).await }).await;
@@ -306,12 +406,12 @@ fn sign_in(mut station: Station, engine: Engine) {
     station.write_channel(Channel::Auth).auth = Auth::SigningIn("Abriendo Google…".into());
     let (steps, mut heard) = tokio::sync::mpsc::unbounded_channel::<String>();
     let mut progress = station;
-    spawn(async move {
+    spawn_forever(async move {
         while let Some(step) = heard.recv().await {
             progress.write_channel(Channel::Auth).auth = Auth::SigningIn(step);
         }
     });
-    spawn(async move {
+    spawn_forever(async move {
         let say = move |step: String| {
             let _ = steps.send(step);
         };

@@ -9,16 +9,24 @@ use freya::radio::use_radio;
 
 use crate::images;
 use crate::library::{ArtistPage, Shelf};
+use crate::nav::Target;
 use crate::screens::{cards, search, songs};
 use crate::state::{AppState, Channel, Load, Spot, Zone};
 use crate::ui::{self, Icon, Variant, color, metrics, text};
 
-/// Height of the banner.
-const HERO: f32 = 400.;
+/// Height of the banner: shorter on a phone.
+fn hero_height() -> f32 {
+    match ui::compact() {
+        true => 300.,
+        false => 400.,
+    }
+}
 /// Height of a section title.
 const TITLE: f32 = 52.;
 /// One shelf: its title and a row of covers.
-const SHELF: f32 = TITLE + cards::ROW + 16.;
+fn shelf_height() -> f32 {
+    TITLE + cards::row() + 16.
+}
 
 #[derive(PartialEq)]
 pub struct Artist;
@@ -30,7 +38,7 @@ impl Component for Artist {
         let now = use_radio::<AppState, Channel>(Channel::Now);
 
         let state = navigation.read();
-        let spot = match state.focus.zone == Zone::Content {
+        let spot = match state.focus.zone == Zone::Content && !ui::touch() {
             true => Some(state.focus.content),
             false => None,
         };
@@ -43,9 +51,13 @@ impl Component for Artist {
             .ready()
             .map_or(0, |page| page.top.len().min(crate::state::ARTIST_TOP));
         let target = match spot {
-            Some(Spot::Row(row)) => HERO + TITLE + row as f32 * metrics::ROW,
+            Some(Spot::Row(row)) => hero_height() + TITLE + row as f32 * songs::row_height(),
             Some(Spot::Cell(shelf, _)) => {
-                HERO + TITLE + top_rows as f32 * metrics::ROW + 24. + shelf as f32 * SHELF
+                hero_height()
+                    + TITLE
+                    + top_rows as f32 * songs::row_height()
+                    + 24.
+                    + shelf as f32 * shelf_height()
             }
             _ => 0.,
         };
@@ -100,7 +112,7 @@ impl Component for Artist {
             .child(
                 rect()
                     .width(Size::fill())
-                    .padding((0., metrics::INSET, metrics::INSET, metrics::INSET))
+                    .padding((0., ui::inset(), ui::inset(), ui::inset()))
                     .maybe(!top.is_empty(), |content| {
                         content
                             .child(section("Canciones más populares"))
@@ -115,15 +127,16 @@ impl Component for Artist {
 
 /// The banner with the name, audience, description and the two buttons over its faded foot.
 fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
+    let compact = ui::compact();
     rect()
         .width(Size::fill())
-        .height(Size::px(HERO))
+        .height(Size::px(hero_height()))
         .map(page.banner.clone(), |hero, url| {
             hero.child(
                 rect()
                     .position(Position::new_absolute().top(0.).left(0.))
                     .width(Size::fill())
-                    .height(Size::px(HERO))
+                    .height(Size::px(hero_height()))
                     .child(Banner { url }),
             )
         })
@@ -133,13 +146,21 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
             rect()
                 .layer(Layer::Relative(8))
                 .width(Size::fill())
-                .height(Size::px(HERO))
-                .padding((0., metrics::INSET, 28., metrics::INSET))
+                .height(Size::px(hero_height()))
+                .padding((0., ui::inset(), 28., ui::inset()))
                 .main_align(Alignment::End)
                 .spacing(8.)
                 .child(
-                    ui::line(page.name.clone(), text::DISPLAY * 1.6, color::FOREGROUND)
-                        .font_weight(FontWeight::BOLD),
+                    ui::line(
+                        page.name.clone(),
+                        match compact {
+                            true => text::DISPLAY * 1.2,
+                            false => text::DISPLAY * 1.6,
+                        },
+                        color::FOREGROUND,
+                    )
+                    .font_weight(FontWeight::BOLD)
+                    .width(Size::fill()),
                 )
                 .map(page.audience.clone(), |hero, audience| {
                     hero.child(ui::line(audience, text::BODY, color::ON_BACKDROP))
@@ -152,7 +173,10 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                             .color(color::ON_BACKDROP)
                             .max_lines(2)
                             .text_overflow(TextOverflow::Ellipsis)
-                            .width(Size::percent(60.)),
+                            .width(Size::percent(match compact {
+                                true => 100.,
+                                false => 60.,
+                            })),
                     )
                 })
                 .child(
@@ -160,18 +184,24 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                         .direction(Direction::Horizontal)
                         .spacing(10.)
                         .margin((8., 0., 0., 0.))
-                        .child(ui::button(
-                            Variant::Primary,
-                            Some(Icon::PlayFilled),
-                            Some("Reproducir"),
-                            spot == Some(Spot::Action(0)),
-                        ))
-                        .child(ui::button(
-                            Variant::Outline,
-                            Some(Icon::Shuffle),
-                            Some("Aleatorio"),
-                            spot == Some(Spot::Action(1)),
-                        )),
+                        .child(
+                            ui::button(
+                                Variant::Primary,
+                                Some(Icon::PlayFilled),
+                                Some("Reproducir"),
+                                spot == Some(Spot::Action(0)),
+                            )
+                            .on_press(ui::tap(Target::Content(Spot::Action(0)))),
+                        )
+                        .child(
+                            ui::button(
+                                Variant::Outline,
+                                Some(Icon::Shuffle),
+                                Some("Aleatorio"),
+                                spot == Some(Spot::Action(1)),
+                            )
+                            .on_press(ui::tap(Target::Content(Spot::Action(1)))),
+                        ),
                 ),
         )
 }
@@ -182,28 +212,41 @@ fn shelf_row(at: usize, shelf: &Shelf, spot: Option<Spot>, columns: usize) -> im
         Some(Spot::Cell(row, item)) if row == at => Some(item),
         _ => None,
     };
-    let start = focused.map_or(0, |item| (item + 1).saturating_sub(columns));
-    rect()
+    let tiles =
+        |skip: usize, take: usize| {
+            rect()
+                .direction(Direction::Horizontal)
+                .spacing(ui::gap())
+                .children(shelf.items.iter().enumerate().skip(skip).take(take).map(
+                    |(index, item)| {
+                        search::tile(
+                            index,
+                            item,
+                            focused == Some(index),
+                            Target::Content(Spot::Cell(at, index)),
+                        )
+                        .into_element()
+                    },
+                ))
+        };
+    let row = rect()
         .key(at)
         .width(Size::fill())
         .margin((0., 0., 16., 0.))
-        .child(section(&shelf.title))
-        .child(
-            rect()
+        .child(section(&shelf.title));
+    // A phone scrolls the whole shelf sideways under a finger; the D-pad slides it instead.
+    if ui::compact() {
+        return row.child(
+            ScrollView::new()
                 .direction(Direction::Horizontal)
-                .spacing(metrics::CARD_GAP)
-                .children(
-                    shelf
-                        .items
-                        .iter()
-                        .enumerate()
-                        .skip(start)
-                        .take(columns)
-                        .map(|(index, item)| {
-                            search::tile(index, item, focused == Some(index)).into_element()
-                        }),
-                ),
-        )
+                .show_scrollbar(false)
+                .width(Size::fill())
+                .height(Size::px(cards::row()))
+                .child(tiles(0, shelf.items.len())),
+        );
+    }
+    let start = focused.map_or(0, |item| (item + 1).saturating_sub(columns));
+    row.child(tiles(start, columns))
 }
 
 fn section(title: &str) -> impl IntoElement {
@@ -243,12 +286,12 @@ impl Component for Banner {
             .map(|(from, bytes)| (images::key(&from), bytes));
         rect()
             .width(Size::fill())
-            .height(Size::px(HERO))
+            .height(Size::px(hero_height()))
             .map(image, |banner, image| {
                 banner.child(
                     ImageViewer::new(ImageSource::from(image))
                         .width(Size::fill())
-                        .height(Size::px(HERO))
+                        .height(Size::px(hero_height()))
                         .aspect_ratio(AspectRatio::Max)
                         .image_cover(ImageCover::Center),
                 )
@@ -257,7 +300,7 @@ impl Component for Banner {
                 rect()
                     .position(Position::new_absolute().top(0.).left(0.))
                     .width(Size::fill())
-                    .height(Size::px(HERO))
+                    .height(Size::px(hero_height()))
                     .child(fade()),
             )
     }
@@ -303,5 +346,5 @@ fn fade() -> impl IntoElement {
             .draw_rect(Rect::from_wh(width, height), &paint);
     }))
     .width(Size::fill())
-    .height(Size::px(HERO))
+    .height(Size::px(hero_height()))
 }

@@ -61,7 +61,10 @@ impl Component for LyricsPanel {
         });
 
         let (width, view) = ui::viewport();
-        let size = (width / 46.).clamp(18., SIZE_MAX);
+        let size = match ui::compact() {
+            true => (width / 15.).clamp(20., 28.),
+            false => (width / 46.).clamp(18., SIZE_MAX),
+        };
         let gap = size * GAP;
         let lines: Option<std::sync::Arc<[LyricsLine]>> = match &state.lyrics {
             Load::Ready(Lyrics::Synced { lines }) => Some(lines.clone()),
@@ -81,7 +84,7 @@ impl Component for LyricsPanel {
             }
             None => 0.,
         };
-        let scroll = ui::use_follow(target);
+        let scroll = ui::use_follow_always(target);
 
         let body = match (&state.lyrics, lines) {
             (_, Some(lines)) => synced(

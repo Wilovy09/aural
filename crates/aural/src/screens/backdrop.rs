@@ -28,7 +28,7 @@ use skia_safe::{ColorMatrix, Point, Vertices, color_filters};
 
 use crate::library;
 use crate::state::{AppState, Channel};
-use crate::{images, ui};
+use crate::{artwork, images, ui};
 
 /// The side the cover is blurred at, kawarp's `BLUR_SIZE`.
 const BLUR_SIZE: i32 = 128;
@@ -53,27 +53,34 @@ pub struct Backdrop;
 impl Component for Backdrop {
     fn render(&self) -> impl IntoElement {
         let now = use_radio::<AppState, Channel>(Channel::Now);
-        let cover = now
-            .read()
-            .now
-            .song
-            .as_ref()
-            .and_then(|song| song.cover.clone())
-            .map(|url| library::sized(&url, library::THUMB_EDGE));
+        let song = now.read().now.song.clone();
+        // The song's id: what the backdrop follows. Apple's cover is preferred, as everywhere.
+        let cover = song.as_ref().map(|song| song.id.clone());
 
         let started = use_hook(Instant::now);
         // The blurred cover now, the one fading out, and when the fade started.
         let mut bases = use_state(|| (None::<SkImage>, None::<SkImage>, Instant::now()));
         let wanted = use_reactive(&cover);
+        let playing = use_reactive(&song);
         use_side_effect(move || {
-            let Some(url) = wanted.read().clone() else {
+            let Some(song) = playing.read().clone() else {
                 return;
             };
+            let id = song.id.clone();
             spawn(async move {
-                let Some(bytes) = images::fetch(url.clone()).await else {
+                let apple =
+                    artwork::find(artwork::Wanted::song(&song), library::THUMB_EDGE).await;
+                let youtube = song
+                    .cover
+                    .as_deref()
+                    .map(|url| library::sized(url, library::THUMB_EDGE));
+                let Some(url) = apple.or(youtube) else {
                     return;
                 };
-                if wanted.peek().as_deref() != Some(url.as_str()) {
+                let Some(bytes) = images::fetch(url).await else {
+                    return;
+                };
+                if wanted.peek().as_deref() != Some(id.as_str()) {
                     return;
                 }
                 if let Some(blurred) = blurred(&bytes) {

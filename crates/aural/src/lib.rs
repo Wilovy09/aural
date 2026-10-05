@@ -1,12 +1,14 @@
 //! Aural: a YouTube Music client in Freya for desktop, Android phones and Android TV.
 
 mod app;
+mod artwork;
 mod chrome;
 mod cover;
 mod engine;
 mod images;
 mod library;
 mod login;
+mod media;
 mod nav;
 mod platform;
 mod probe;
@@ -23,10 +25,35 @@ use freya::prelude::*;
 
 /// The window every platform opens.
 pub fn window() -> WindowConfig {
-    WindowConfig::new(app::app)
+    let window = WindowConfig::new(app::app)
         .with_title("Aural")
         .with_size(1280., 760.)
-        .with_background(ui::color::BACKGROUND)
+        .with_background(ui::color::BACKGROUND);
+    #[cfg(not(target_os = "android"))]
+    let window = window.with_icon(LaunchConfig::window_icon(ICON));
+    window
+}
+
+/// The app's icon, for the window and the Dock.
+#[cfg(not(target_os = "android"))]
+const ICON: &[u8] = include_bytes!("../../../assets/logos/aural_icon.png");
+
+/// Shows the icon in the Dock: macOS takes an app's icon from its bundle and ignores the
+/// window's, and a binary run on its own has no bundle.
+#[cfg(target_os = "macos")]
+pub(crate) fn dock_icon() {
+    use objc2::AnyThread as _;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    let Some(main) = MainThreadMarker::new() else {
+        return;
+    };
+    let data = NSData::with_bytes(ICON);
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+        // SAFETY: on the main thread, with an image that lives as long as the app holds it.
+        unsafe { NSApplication::sharedApplication(main).setApplicationIconImage(Some(&image)) };
+    }
 }
 
 fn launch_config() -> LaunchConfig {

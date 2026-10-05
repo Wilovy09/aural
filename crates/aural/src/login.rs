@@ -34,7 +34,7 @@ pub fn web_sign_in(say: &dyn Fn(String)) -> Result<String> {
 pub use platform::window_sign_in;
 
 #[cfg(target_os = "android")]
-pub use platform::{data_dir, keep_screen_on, remember};
+pub use platform::{data_dir, helper, insets, keep_screen_on, remember, with_java};
 
 #[cfg(target_os = "android")]
 mod platform {
@@ -58,6 +58,91 @@ mod platform {
         let _ = APP.set(app);
     }
 
+    /// The room the visible system bars take at the top and bottom, in physical pixels: the
+    /// window is drawn edge to edge, under them. Asked once, when the window has been laid out.
+    pub fn insets() -> (f32, f32) {
+        static INSETS: OnceLock<(f32, f32)> = OnceLock::new();
+        if let Some(insets) = INSETS.get() {
+            return *insets;
+        }
+        match ask_insets() {
+            Ok(Some(insets)) => *INSETS.get_or_init(|| insets),
+            Ok(None) => (0., 0.),
+            Err(error) => {
+                log::warn!("insets: {error:#}");
+                *INSETS.get_or_init(|| (0., 0.))
+            }
+        }
+    }
+
+    fn ask_insets() -> Result<Option<(f32, f32)>> {
+        let app = APP.get().context("android_main has not run")?;
+        // SAFETY: android-activity hands out the process JavaVM.
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.context("no JavaVM")?;
+        let mut env = vm
+            .attach_current_thread()
+            .context("cannot attach to the JVM")?;
+        // SAFETY: a global reference to the activity, valid while the activity is alive.
+        let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+        let class = screen(&mut env, &activity)?;
+        let found = env
+            .call_static_method(
+                &class,
+                "insets",
+                "(Landroid/app/Activity;)[I",
+                &[JValue::Object(&activity)],
+            )?
+            .l()?;
+        if found.is_null() {
+            return Ok(None);
+        }
+        let array = jni::objects::JIntArray::from(found);
+        let mut pair = [0i32; 2];
+        env.get_int_array_region(&array, 0, &mut pair)?;
+        Ok(Some((pair[0] as f32, pair[1] as f32)))
+    }
+
+    /// `dev.aural.app.Screen`, through the activity's class loader.
+    fn screen<'local>(env: &mut jni::JNIEnv<'local>, activity: &JObject) -> Result<JClass<'local>> {
+        helper(env, activity, "dev.aural.app.Screen")
+    }
+
+    /// Runs `job` with this thread attached to the JVM and the activity at hand, for the Java
+    /// helpers in `android/java`.
+    pub fn with_java<R>(job: impl FnOnce(&mut jni::JNIEnv, &JObject) -> Result<R>) -> Result<R> {
+        let app = APP.get().context("android_main has not run")?;
+        // SAFETY: android-activity hands out the process JavaVM.
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.context("no JavaVM")?;
+        let mut env = vm
+            .attach_current_thread()
+            .context("cannot attach to the JVM")?;
+        // SAFETY: a global reference to the activity, valid while the activity is alive.
+        let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+        job(&mut env, &activity)
+    }
+
+    /// One of the Java helpers, `name` such as `dev.aural.app.Media`, through the activity's
+    /// class loader: the system one does not know the app's classes.
+    pub fn helper<'local>(
+        env: &mut jni::JNIEnv<'local>,
+        activity: &JObject,
+        name: &str,
+    ) -> Result<JClass<'local>> {
+        let loader = env
+            .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+            .l()?;
+        let name = env.new_string(name)?;
+        Ok(env
+            .call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?
+            .into())
+    }
+
     /// The app's private data folder.
     pub fn data_dir() -> Option<std::path::PathBuf> {
         APP.get()?.internal_data_path()
@@ -74,24 +159,7 @@ mod platform {
             .context("cannot attach to the JVM")?;
         // SAFETY: a global reference to the activity, valid while the activity is alive.
         let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
-        let loader = env
-            .call_method(
-                &activity,
-                "getClassLoader",
-                "()Ljava/lang/ClassLoader;",
-                &[],
-            )?
-            .l()?;
-        let name = env.new_string("dev.aural.app.Screen")?;
-        let class: JClass = env
-            .call_method(
-                &loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&name)],
-            )?
-            .l()?
-            .into();
+        let class = screen(&mut env, &activity)?;
         env.call_static_method(
             &class,
             "keepOn",

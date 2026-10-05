@@ -10,7 +10,7 @@ use freya::prelude::*;
 use freya::radio::{RadioStation, use_radio, use_radio_station};
 
 use crate::library::{self, Best, Collection, Kind, Song};
-use crate::nav::TOP_SONGS;
+use crate::nav::{TOP_SONGS, Target};
 use crate::runtime;
 use crate::screens::cards;
 use crate::state::{AppState, Channel, Filter, Load, Spot, Zone};
@@ -29,7 +29,9 @@ const HEAD: f32 = metrics::INSET + 48. + 18. + 40. + 28.;
 /// The best match and the top songs beside it.
 const TOP: f32 = TITLE + TOP_SONGS as f32 * ROW;
 /// One shelf: its title and a row of covers.
-const SHELF: f32 = TITLE + cards::ROW + 12.;
+fn shelf_height() -> f32 {
+    TITLE + cards::row() + 12.
+}
 
 thread_local! {
     /// The field's accessibility id, so a key press can hand it the keyboard.
@@ -81,7 +83,7 @@ impl Component for Search {
         });
 
         let state = navigation.read();
-        let spot = match state.focus.zone == Zone::Content {
+        let spot = match state.focus.zone == Zone::Content && !ui::touch() {
             true => Some(state.focus.content),
             false => None,
         };
@@ -109,11 +111,11 @@ impl Component for Search {
                     .iter()
                     .position(|shelf| *shelf == group)
                     .unwrap_or(0);
-                HEAD + TOP + 24. + place as f32 * SHELF
+                HEAD + TOP + 24. + place as f32 * shelf_height()
             }
             (Some(Spot::Cell(0, row)), Filter::Songs) => HEAD + row as f32 * ROW,
             (Some(Spot::Cell(_, at)), _) if filter != Filter::All => {
-                HEAD + (at / columns) as f32 * cards::ROW
+                HEAD + (at / columns) as f32 * cards::row()
             }
             _ => 0.,
         };
@@ -178,6 +180,7 @@ impl Component for Search {
         };
         let has_query = !query.read().is_empty();
         let results = found.ready().cloned();
+        let compact = ui::compact();
 
         ScrollView::new_controlled(scroll)
             .width(Size::fill())
@@ -185,7 +188,7 @@ impl Component for Search {
             .child(
                 rect()
                     .width(Size::fill())
-                    .padding(metrics::INSET)
+                    .padding(ui::inset())
                     .spacing(18.)
                     .child(
                         rect()
@@ -199,6 +202,7 @@ impl Component for Search {
                             .corner_radius(24.)
                             .background(color::SECONDARY)
                             .border(field_border)
+                            .on_press(ui::tap(Target::Content(Spot::Action(0))))
                             .child(ui::icon(Icon::Search, 18., color::MUTED_FOREGROUND))
                             .child(rect().width(Size::flex(1.)).child(input))
                             .maybe(has_query, |row| {
@@ -209,11 +213,14 @@ impl Component for Search {
                                         .center()
                                         .corner_radius(16.)
                                         .border(ui::focus_border(spot == Some(Spot::Action(1))))
+                                        .on_press(ui::tap(Target::Content(Spot::Action(1))))
                                         .child(ui::icon(Icon::Close, 18., color::FOREGROUND)),
                                 )
                             }),
                     )
-                    .maybe(results.is_some(), |page| page.child(chips(filter, spot)))
+                    .maybe(results.is_some(), |page| {
+                        page.child(chips(filter, spot, compact))
+                    })
                     .map(status, |page, status| {
                         page.child(ui::line(status, text::BODY, color::MUTED_FOREGROUND))
                     })
@@ -223,6 +230,7 @@ impl Component for Search {
                             spot,
                             playing: playing.as_deref(),
                             columns,
+                            compact,
                         };
                         match filter {
                             Filter::All => page.children(view.everything(&shelves)),
@@ -235,8 +243,8 @@ impl Component for Search {
 }
 
 /// The filter chips: the chosen one filled white, the D-pad's one ringed.
-fn chips(filter: Filter, spot: Option<Spot>) -> impl IntoElement {
-    rect()
+fn chips(filter: Filter, spot: Option<Spot>, compact: bool) -> impl IntoElement {
+    let row = rect()
         .direction(Direction::Horizontal)
         .spacing(10.)
         .children(Filter::ALL.iter().enumerate().map(|(at, chip)| {
@@ -255,6 +263,7 @@ fn chips(filter: Filter, spot: Option<Spot>) -> impl IntoElement {
                     true => Border::new().fill(color::FOCUS_ON_PRIMARY).width(3.),
                     false => Border::new().fill(Color::TRANSPARENT).width(3.),
                 })
+                .on_press(ui::tap(Target::Content(Spot::Chip(at))))
                 .child(
                     ui::line(
                         chip.name(),
@@ -267,7 +276,18 @@ fn chips(filter: Filter, spot: Option<Spot>) -> impl IntoElement {
                     .font_weight(FontWeight::SEMI_BOLD),
                 )
                 .into()
-        }))
+        }));
+    // A phone has no room for every chip: they scroll sideways under a finger.
+    match compact {
+        true => ScrollView::new()
+            .direction(Direction::Horizontal)
+            .show_scrollbar(false)
+            .width(Size::fill())
+            .height(Size::px(40.))
+            .child(row)
+            .into_element(),
+        false => row.into_element(),
+    }
 }
 
 /// What the results are drawn from.
@@ -276,6 +296,7 @@ struct View<'a> {
     spot: Option<Spot>,
     playing: Option<&'a str>,
     columns: usize,
+    compact: bool,
 }
 
 impl View<'_> {
@@ -290,6 +311,32 @@ impl View<'_> {
             .enumerate()
             .map(|(row, song)| self.song(row, song, false).into_element())
             .collect();
+        // A phone stacks the best match over the songs.
+        if self.compact {
+            if let Some(best) = found.best.clone() {
+                parts.push(
+                    rect()
+                        .width(Size::fill())
+                        .child(section("Mejor resultado"))
+                        .child(best_card(&best, self.spot == Some(Spot::Best), true))
+                        .into(),
+                );
+            }
+            if !songs.is_empty() {
+                parts.push(
+                    rect()
+                        .width(Size::fill())
+                        .child(section("Canciones"))
+                        .children(songs)
+                        .into(),
+                );
+            }
+            for group in shelves {
+                let (title, items) = self.group(*group);
+                parts.push(self.shelf(title, *group, items).into_element());
+            }
+            return parts;
+        }
         parts.push(
             rect()
                 .width(Size::fill())
@@ -301,7 +348,7 @@ impl View<'_> {
                         rect()
                             .width(Size::flex(0.42))
                             .child(section("Mejor resultado"))
-                            .child(best_card(&best, self.spot == Some(Spot::Best))),
+                            .child(best_card(&best, self.spot == Some(Spot::Best), false)),
                     )
                 })
                 .maybe(!songs.is_empty(), |top| {
@@ -336,24 +383,44 @@ impl View<'_> {
             Some(Spot::Cell(at_group, at)) if at_group == group => Some(at),
             _ => None,
         };
-        let start = focused.map_or(0, |at| (at + 1).saturating_sub(self.columns));
-        rect()
+        let shelf = rect()
             .width(Size::fill())
             .margin((24., 0., 0., 0.))
-            .child(section(title))
-            .child(
-                rect()
+            .child(section(title));
+        let tiles = |skip: usize, take: usize| {
+            rect()
+                .direction(Direction::Horizontal)
+                .spacing(ui::gap())
+                .children(
+                    items
+                        .iter()
+                        .enumerate()
+                        .skip(skip)
+                        .take(take)
+                        .map(|(at, item)| {
+                            tile(
+                                at,
+                                item,
+                                focused == Some(at),
+                                Target::Content(Spot::Cell(group, at)),
+                            )
+                            .into_element()
+                        }),
+                )
+        };
+        // A phone scrolls the whole shelf sideways under a finger.
+        if self.compact {
+            return shelf.child(
+                ScrollView::new()
                     .direction(Direction::Horizontal)
-                    .spacing(metrics::CARD_GAP)
-                    .children(
-                        items
-                            .iter()
-                            .enumerate()
-                            .skip(start)
-                            .take(self.columns)
-                            .map(|(at, item)| tile(at, item, focused == Some(at)).into_element()),
-                    ),
-            )
+                    .show_scrollbar(false)
+                    .width(Size::fill())
+                    .height(Size::px(cards::row()))
+                    .child(tiles(0, items.len())),
+            );
+        }
+        let start = focused.map_or(0, |at| (at + 1).saturating_sub(self.columns));
+        shelf.child(tiles(start, self.columns))
     }
 
     /// A filter on songs: every song, YouTube Music's row with its kind and album.
@@ -381,12 +448,18 @@ impl View<'_> {
                 .map(|(row, chunk)| {
                     rect()
                         .key(row)
-                        .height(Size::px(cards::ROW))
+                        .height(Size::px(cards::row()))
                         .direction(Direction::Horizontal)
-                        .spacing(metrics::CARD_GAP)
+                        .spacing(ui::gap())
                         .children(chunk.iter().enumerate().map(|(column, item)| {
                             let at = row * self.columns + column;
-                            tile(at, item, focused == Some(at)).into_element()
+                            tile(
+                                at,
+                                item,
+                                focused == Some(at),
+                                Target::Content(Spot::Cell(group, at)),
+                            )
+                            .into_element()
                         }))
                         .into()
                 })
@@ -399,6 +472,7 @@ impl View<'_> {
     fn song(&self, row: usize, song: &Song, detailed: bool) -> impl IntoElement {
         let focused = self.spot == Some(Spot::Cell(0, row));
         let playing = self.playing == Some(song.id.as_str());
+        let detailed = detailed && !self.compact;
         let subtitle = match (detailed, &song.album) {
             (true, Some(album)) => format!("Canción • {} • {album}", song.artist),
             (true, None) => format!("Canción • {}", song.artist),
@@ -419,7 +493,11 @@ impl View<'_> {
                 false => Color::TRANSPARENT,
             })
             .border(ui::focus_border(focused))
-            .child(Cover::new(song.cover.clone(), THUMB, 4.))
+            .on_press(ui::tap(Target::Content(Spot::Cell(0, row))))
+            .child(
+                Cover::new(song.cover.clone(), THUMB, 4.)
+                    .apple(crate::artwork::Wanted::song(&song)),
+            )
             .child(
                 rect()
                     .width(Size::flex(1.))
@@ -457,7 +535,7 @@ fn section(title: &str) -> impl IntoElement {
 }
 
 /// The best match: Spotify's large card, a big picture over a big name and its kind.
-fn best_card(best: &Best, focused: bool) -> impl IntoElement {
+fn best_card(best: &Best, focused: bool, compact: bool) -> impl IntoElement {
     let (cover, round, kind, title, detail) = match best {
         Best::Artist(artist) => (
             artist.cover.clone(),
@@ -474,27 +552,51 @@ fn best_card(best: &Best, focused: bool) -> impl IntoElement {
             song.artist.clone(),
         ),
     };
+    let picture = match compact {
+        true => 88.,
+        false => BEST,
+    };
     rect()
         .width(Size::fill())
-        .height(Size::px(TOP_SONGS as f32 * ROW))
-        .padding(20.)
+        .map(
+            (!compact).then_some(TOP_SONGS as f32 * ROW),
+            |card, height| card.height(Size::px(height)),
+        )
+        .padding(match compact {
+            true => 16.,
+            false => 20.,
+        })
         .spacing(12.)
         .main_align(Alignment::Center)
         .corner_radius(metrics::RADIUS + 4.)
         .background(color::SECONDARY)
         .border(ui::focus_border(focused))
-        .child(Cover::new(
-            cover,
-            BEST,
-            match round {
-                true => BEST / 2.,
-                false => metrics::RADIUS,
+        .on_press(ui::tap(Target::Content(Spot::Best)))
+        .child(Cover {
+            apple: match best {
+                Best::Song(song) => Some(crate::artwork::Wanted::song(song)),
+                Best::Artist(_) => None,
             },
-        ))
+            ..Cover::new(
+                cover,
+                picture,
+                match round {
+                    true => picture / 2.,
+                    false => metrics::RADIUS,
+                },
+            )
+        })
         .child(
-            ui::line(title, text::DISPLAY + 6., color::FOREGROUND)
-                .font_weight(FontWeight::BOLD)
-                .width(Size::fill()),
+            ui::line(
+                title,
+                match compact {
+                    true => text::DISPLAY,
+                    false => text::DISPLAY + 6.,
+                },
+                color::FOREGROUND,
+            )
+            .font_weight(FontWeight::BOLD)
+            .width(Size::fill()),
         )
         .child(ui::line(
             match detail.is_empty() {
@@ -507,8 +609,14 @@ fn best_card(best: &Best, focused: bool) -> impl IntoElement {
 }
 
 /// A large cover for a shelf or grid: an artist's round, an album's or playlist's square.
-pub(crate) fn tile(at: usize, item: &Collection, focused: bool) -> impl IntoElement {
-    let side = metrics::CARD - 6.;
+pub(crate) fn tile(
+    at: usize,
+    item: &Collection,
+    focused: bool,
+    target: Target,
+) -> impl IntoElement {
+    let width = ui::card();
+    let side = width - 6.;
     let round = item.kind == Kind::Artist;
     let subtitle = match item.kind {
         Kind::Artist => "Artista".to_string(),
@@ -519,8 +627,9 @@ pub(crate) fn tile(at: usize, item: &Collection, focused: bool) -> impl IntoElem
     };
     rect()
         .key(at)
-        .width(Size::px(metrics::CARD))
+        .width(Size::px(width))
         .spacing(8.)
+        .on_press(ui::tap(target))
         .child(
             rect()
                 .corner_radius(match round {
@@ -530,14 +639,17 @@ pub(crate) fn tile(at: usize, item: &Collection, focused: bool) -> impl IntoElem
                 .padding(3.)
                 .margin(-3.)
                 .border(ui::focus_border(focused))
-                .child(Cover::new(
-                    item.cover.clone(),
-                    side,
-                    match round {
-                        true => side / 2.,
-                        false => metrics::RADIUS,
-                    },
-                )),
+                .child(Cover {
+                    apple: crate::artwork::Wanted::collection(item),
+                    ..Cover::new(
+                        item.cover.clone(),
+                        side,
+                        match round {
+                            true => side / 2.,
+                            false => metrics::RADIUS,
+                        },
+                    )
+                }),
         )
         .child(
             ui::line(item.title.clone(), text::BODY, color::FOREGROUND)
@@ -559,7 +671,7 @@ pub fn run(mut station: RadioStation<AppState, Channel>, query: String) {
         state.search.results = Load::Loading;
         state.search.filter = Filter::All;
     }
-    spawn(async move {
+    spawn_forever(async move {
         let api = crate::app::client();
         let wanted = query.clone();
         let found = runtime::spawn(async move { library::search(&api, &wanted).await }).await;

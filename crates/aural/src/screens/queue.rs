@@ -80,7 +80,7 @@ fn row(key: usize, song: &Song, current: bool) -> impl IntoElement {
             true => color::BACKDROP_ROW,
             false => Color::TRANSPARENT,
         })
-        .child(Cover::new(song.cover.clone(), THUMB, 4.))
+        .child(Cover::new(song.cover.clone(), THUMB, 4.).apple(crate::artwork::Wanted::song(&song)))
         .child(
             rect()
                 .width(Size::flex(1.))

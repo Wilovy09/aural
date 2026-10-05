@@ -5,6 +5,7 @@ use freya::prelude::*;
 use freya::radio::use_radio;
 
 use crate::library::{self, Kind, Song};
+use crate::nav::Target;
 use crate::state::{AppState, Channel, Load, Page, Spot, Zone};
 use crate::ui::{self, Cover, Icon, Variant, color, metrics, text};
 
@@ -73,43 +74,67 @@ impl Component for Songs {
         };
         let action = |index: usize| in_content && focus.content == Spot::Action(index);
         let row = match focus.content {
-            Spot::Row(row) if in_content => Some(row),
+            Spot::Row(row) if in_content && !ui::touch() => Some(row),
             _ => None,
+        };
+        let compact = ui::compact();
+        let cover_side = match compact {
+            true => 124.,
+            false => HERO_COVER,
         };
         let playing = now.read().now.song.as_ref().map(|song| song.id.clone());
 
         let (_, height) = ui::viewport();
-        let view = height - metrics::PLAYER_BAR - HERO_COVER - metrics::INSET * 3.;
-        let scroll = ui::use_follow(ui::follow_offset(row.unwrap_or(0), metrics::ROW, view));
+        let view = height - metrics::PLAYER_BAR - cover_side - metrics::INSET * 3.;
+        let scroll = ui::use_follow(ui::follow_offset(row.unwrap_or(0), row_height(), view));
 
         let songs = load.ready().cloned().unwrap_or_default();
         let count = songs.len();
 
+        let inset = ui::inset();
         rect()
             .expanded()
-            .padding((metrics::INSET, metrics::INSET, 0., metrics::INSET))
-            .spacing(metrics::INSET)
+            .padding((inset, inset, 0., inset))
+            .spacing(inset)
             .content(Content::Flex)
             .child(
                 rect()
                     .direction(Direction::Horizontal)
                     .cross_align(Alignment::End)
-                    .spacing(20.)
+                    .spacing(match compact {
+                        true => 14.,
+                        false => 20.,
+                    })
                     .child(match cover {
-                        Some(url) => Cover::new(Some(url), HERO_COVER, hero_radius)
+                        Some(url) => Cover::new(Some(url), cover_side, hero_radius)
+                            .maybe_apple(match &page {
+                                Page::Detail(collection) => {
+                                    crate::artwork::Wanted::collection(collection)
+                                }
+                                _ => None,
+                            })
                             .edge(library::COVER_EDGE)
                             .into_element(),
-                        None => liked_tile().into_element(),
+                        None => liked_tile(cover_side).into_element(),
                     })
                     .child(
                         rect()
-                            .height(Size::px(HERO_COVER))
+                            .width(Size::flex(1.))
+                            .height(Size::px(cover_side))
                             .main_align(Alignment::End)
                             .spacing(6.)
                             .child(ui::eyebrow(eyebrow))
                             .child(
-                                ui::line(title, text::DISPLAY, color::FOREGROUND)
-                                    .font_weight(FontWeight::BOLD),
+                                ui::line(
+                                    title,
+                                    match compact {
+                                        true => text::TITLE,
+                                        false => text::DISPLAY,
+                                    },
+                                    color::FOREGROUND,
+                                )
+                                .font_weight(FontWeight::BOLD)
+                                .width(Size::fill()),
                             )
                             .child(ui::line(subtitle, text::SMALL, color::MUTED_FOREGROUND))
                             .child(
@@ -117,18 +142,24 @@ impl Component for Songs {
                                     .direction(Direction::Horizontal)
                                     .spacing(8.)
                                     .padding((4., 0., 0., 0.))
-                                    .child(ui::button(
-                                        Variant::Primary,
-                                        Some(Icon::PlayFilled),
-                                        Some("Reproducir"),
-                                        action(0),
-                                    ))
-                                    .child(ui::button(
-                                        Variant::Outline,
-                                        Some(Icon::Shuffle),
-                                        None,
-                                        action(1),
-                                    )),
+                                    .child(
+                                        ui::button(
+                                            Variant::Primary,
+                                            Some(Icon::PlayFilled),
+                                            Some("Reproducir"),
+                                            action(0),
+                                        )
+                                        .on_press(ui::tap(Target::Content(Spot::Action(0)))),
+                                    )
+                                    .child(
+                                        ui::button(
+                                            Variant::Outline,
+                                            Some(Icon::Shuffle),
+                                            None,
+                                            action(1),
+                                        )
+                                        .on_press(ui::tap(Target::Content(Spot::Action(1)))),
+                                    ),
                             ),
                     ),
             )
@@ -137,7 +168,7 @@ impl Component for Songs {
                     .width(Size::fill())
                     .height(Size::flex(1.))
                     .content(Content::Flex)
-                    .child(header())
+                    .maybe(!compact, |table| table.child(header()))
                     .child(
                         // The data is what the rows depend on: the list compares it, not the
                         // builder, to know when to redraw.
@@ -156,7 +187,7 @@ impl Component for Songs {
                             scroll,
                         )
                         .length(count)
-                        .item_size(metrics::ROW)
+                        .item_size(row_height())
                         .width(Size::fill())
                         .height(Size::flex(1.)),
                     ),
@@ -165,18 +196,14 @@ impl Component for Songs {
 }
 
 /// The liked songs hero: a heart on a muted square, as Sonora draws it.
-fn liked_tile() -> impl IntoElement {
+fn liked_tile(side: f32) -> impl IntoElement {
     rect()
-        .width(Size::px(HERO_COVER))
-        .height(Size::px(HERO_COVER))
+        .width(Size::px(side))
+        .height(Size::px(side))
         .corner_radius(metrics::RADIUS * 1.5)
         .background(color::MUTED)
         .center()
-        .child(ui::icon(
-            Icon::HeartFilled,
-            HERO_COVER * 0.4,
-            color::FOREGROUND,
-        ))
+        .child(ui::icon(Icon::HeartFilled, side * 0.4, color::FOREGROUND))
 }
 
 /// The table's column titles.
@@ -215,17 +242,68 @@ fn header() -> impl IntoElement {
         )
 }
 
-/// One song of the table: index, thumbnail, title and artists, album, duration.
+/// Height of a track row: taller on a phone, for a finger.
+pub(crate) fn row_height() -> f32 {
+    match ui::compact() {
+        true => 60.,
+        false => metrics::ROW,
+    }
+}
+
+/// One song of the table: index, thumbnail, title and artists, album, duration. A phone keeps
+/// the cover, the title and artists and the duration.
 pub(crate) fn track_row(
     index: usize,
     song: &Song,
     focused: bool,
     playing: bool,
 ) -> impl IntoElement {
+    let focused = ui::ring(focused);
     let title_ink = match playing {
         true => color::PRIMARY,
         false => color::FOREGROUND,
     };
+    if ui::compact() {
+        return rect()
+            .key(index)
+            .height(Size::px(row_height()))
+            .width(Size::fill())
+            .padding((0., 4.))
+            .direction(Direction::Horizontal)
+            .content(Content::Flex)
+            .cross_align(Alignment::Center)
+            .spacing(12.)
+            .corner_radius(metrics::RADIUS)
+            .background(match (focused, playing) {
+                (true, _) => color::FOCUS_FILL,
+                (false, true) => color::MUTED,
+                (false, false) => Color::TRANSPARENT,
+            })
+            .border(ui::focus_border(focused))
+            .on_press(ui::tap(Target::Content(Spot::Row(index))))
+            .child(
+                Cover::new(song.cover.clone(), 48., 4.).apple(crate::artwork::Wanted::song(&song)),
+            )
+            .child(
+                rect()
+                    .width(Size::flex(1.))
+                    .spacing(2.)
+                    .child(
+                        ui::line(song.title.clone(), text::BODY + 1., title_ink)
+                            .width(Size::fill()),
+                    )
+                    .child(
+                        ui::line(song.artist.clone(), text::SMALL, color::MUTED_FOREGROUND)
+                            .width(Size::fill()),
+                    ),
+            )
+            .child(ui::line(
+                song.duration.map(library::clock).unwrap_or_default(),
+                text::SMALL,
+                color::MUTED_FOREGROUND,
+            ))
+            .into_element();
+    }
     rect()
         .key(index)
         .height(Size::px(metrics::ROW))
@@ -241,6 +319,7 @@ pub(crate) fn track_row(
             (false, false) => Color::TRANSPARENT,
         })
         .border(ui::focus_border(focused))
+        .on_press(ui::tap(Target::Content(Spot::Row(index))))
         .child(
             rect().width(Size::px(44.)).child(match playing {
                 true => ui::icon(Icon::Playing, 14., color::PRIMARY).into_element(),
@@ -253,9 +332,10 @@ pub(crate) fn track_row(
             }),
         )
         .child(
-            rect()
-                .width(Size::px(metrics::THUMB + 12.))
-                .child(Cover::new(song.cover.clone(), metrics::THUMB, 4.)),
+            rect().width(Size::px(metrics::THUMB + 12.)).child(
+                Cover::new(song.cover.clone(), metrics::THUMB, 4.)
+                    .apple(crate::artwork::Wanted::song(&song)),
+            ),
         )
         .child(
             rect()
@@ -284,4 +364,5 @@ pub(crate) fn track_row(
                     color::MUTED_FOREGROUND,
                 )),
         )
+        .into_element()
 }

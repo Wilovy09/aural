@@ -32,6 +32,8 @@ pub enum Action {
     EditSearch,
     /// Empty the search field and its results.
     ClearSearch,
+    /// Move this many seconds through the song, back when negative.
+    SeekBy(i64),
 }
 
 /// The arrow keys, OK and Back, whatever the device calls them.
@@ -57,6 +59,56 @@ impl Press {
             _ => return None,
         })
     }
+}
+
+/// How far left and right on the progress move, in seconds.
+const SEEK_STEP: i64 = 10;
+
+/// What a tap or a click lands on, named the way the D-pad reaches it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Target {
+    /// An entry of the sidebar, or of the bottom bar on a phone.
+    Sidebar(usize),
+    Content(Spot),
+    /// A button of the player bar; the last one opens the fullscreen player.
+    Player(usize),
+    /// A view tab of the fullscreen player.
+    Tab(usize),
+    /// A button of the fullscreen transport.
+    Transport(usize),
+    /// Back, for screens a finger has no other way out of.
+    Back,
+}
+
+/// A tap: the focus moves onto `target` and OK is pressed there.
+pub fn tap(state: &mut AppState, target: Target, columns: usize) -> Action {
+    if state.fullscreen && state.mode != Mode::Normal {
+        return press(state, Press::Ok, columns);
+    }
+    match target {
+        Target::Sidebar(at) => {
+            state.focus.zone = Zone::Sidebar;
+            state.focus.sidebar = at;
+        }
+        Target::Content(spot) => {
+            state.focus.zone = Zone::Content;
+            state.focus.content = spot;
+        }
+        Target::Player(at) => {
+            state.focus.zone = Zone::Player;
+            state.focus.player = at;
+        }
+        Target::Tab(at) => {
+            state.focus.full_row = 0;
+            state.focus.full_tab = at;
+        }
+        Target::Transport(at) => {
+            state.focus.full_row = 1;
+            state.focus.full_button = at;
+        }
+        Target::Back => return press(state, Press::Back, columns),
+    }
+    press(state, Press::Ok, columns)
 }
 
 /// Moves the focus for `press` and returns what else should happen. `columns` is how many
@@ -126,7 +178,7 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
         // The view tabs: Música, Letra, Cola.
         (0, Press::Left) => focus.full_tab = focus.full_tab.saturating_sub(1),
         (0, Press::Right) => focus.full_tab = (focus.full_tab + 1).min(2),
-        (0, Press::Down) => focus.full_row = 1,
+        (0, Press::Down) => focus.full_row = 2,
         (0, Press::Ok) => {
             state.view = match focus.full_tab {
                 0 => View::Music,
@@ -135,10 +187,10 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
             }
         }
         (0, Press::Up) => {}
-        // The transport: shuffle, previous, play, next, repeat.
-        (_, Press::Left) => focus.full_button = focus.full_button.saturating_sub(1),
-        (_, Press::Right) => focus.full_button = (focus.full_button + 1).min(TRANSPORT_BUTTONS - 1),
-        (_, Press::Up) => {
+        // The progress: left and right seek ten seconds.
+        (2, Press::Left) => return Action::SeekBy(-SEEK_STEP),
+        (2, Press::Right) => return Action::SeekBy(SEEK_STEP),
+        (2, Press::Up) => {
             focus.full_row = 0;
             focus.full_tab = match state.view {
                 View::Music => 0,
@@ -146,6 +198,12 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
                 View::Queue => 2,
             };
         }
+        (2, Press::Down) => focus.full_row = 1,
+        (2, Press::Ok) => {}
+        // The transport: shuffle, previous, play, next, repeat.
+        (_, Press::Left) => focus.full_button = focus.full_button.saturating_sub(1),
+        (_, Press::Right) => focus.full_button = (focus.full_button + 1).min(TRANSPORT_BUTTONS - 1),
+        (_, Press::Up) => focus.full_row = 2,
         (_, Press::Down) => state.fullscreen = false,
         (_, Press::Ok) => {
             return match focus.full_button {

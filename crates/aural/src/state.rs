@@ -94,7 +94,8 @@ pub struct Focus {
     pub sidebar: usize,
     pub content: Spot,
     pub player: usize,
-    /// In the fullscreen player: the view tabs (row 0) or the transport (row 1).
+    /// In the fullscreen player: the view tabs (row 0), the transport (row 1) or the
+    /// progress (row 2), where left and right seek.
     pub full_row: usize,
     /// The view tab the D-pad is on.
     pub full_tab: usize,

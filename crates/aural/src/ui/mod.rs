@@ -174,9 +174,47 @@ pub fn logo(size: f32) -> impl IntoElement {
         .height(Size::px(size))
 }
 
+/// Windows narrower than this get the phone layout: a bottom bar instead of the sidebar.
+pub const COMPACT: f32 = 640.;
+
+/// Whether the window is narrow enough for the phone layout.
+pub fn compact() -> bool {
+    viewport().0 < COMPACT
+}
+
+thread_local! {
+    /// Whether the last input was a touch or a click rather than a key.
+    static TOUCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the last input was a touch or a click. Focus rings are for the D-pad only, and a
+/// list a finger scrolls should not glide back to the focus on its own.
+pub fn touch() -> bool {
+    TOUCH.get()
+}
+
+/// Notes whether the last input was a touch (or click) or a key.
+pub fn set_touch(touch: bool) {
+    TOUCH.set(touch);
+}
+
+/// What the D-pad is on, as long as the last input was a key.
+pub fn ring(focused: bool) -> bool {
+    focused && !touch()
+}
+
+/// A press handler that moves the focus onto `target` and presses OK there, the way a tap or a
+/// click does what the D-pad would.
+pub fn tap(target: crate::nav::Target) -> impl FnMut(Event<PressEventData>) + 'static {
+    move |event: Event<PressEventData>| {
+        event.stop_propagation();
+        crate::app::tap(target);
+    }
+}
+
 /// The border and fill that mark the element the D-pad is on.
 pub fn focus_border(focused: bool) -> Border {
-    match focused {
+    match ring(focused) {
         true => Border::new().fill(color::FOCUS).width(2.),
         false => Border::new().fill(Color::TRANSPARENT).width(2.),
     }
@@ -206,11 +244,50 @@ pub fn viewport() -> (f32, f32) {
     (size.width / scale, size.height / scale)
 }
 
-/// How many cards fit a row of the content area.
+/// The room the system bars take at the top and bottom of the window, in logical pixels.
+pub fn safe() -> (f32, f32) {
+    #[cfg(target_os = "android")]
+    {
+        let scale = (*Platform::get().scale_factor.read() as f32).max(0.5);
+        let (top, bottom) = crate::login::insets();
+        (top / scale, bottom / scale)
+    }
+    #[cfg(not(target_os = "android"))]
+    (0., 0.)
+}
+
+/// How many cards fit a row of the content area: two on a phone.
 pub fn columns() -> usize {
+    if compact() {
+        return 2;
+    }
     let (width, _) = viewport();
     let room = width - metrics::SIDEBAR - metrics::INSET * 2.;
     (((room + metrics::CARD_GAP) / (metrics::CARD + metrics::CARD_GAP)).floor() as usize).max(1)
+}
+
+/// The side of a card: fixed on a wide window, half the width on a phone.
+pub fn card() -> f32 {
+    match compact() {
+        true => ((viewport().0 - inset() * 2. - gap()) / 2.).min(240.),
+        false => metrics::CARD,
+    }
+}
+
+/// The margin around a page's content: narrower on a phone.
+pub fn inset() -> f32 {
+    match compact() {
+        true => 16.,
+        false => metrics::INSET,
+    }
+}
+
+/// The gap between two cards.
+pub fn gap() -> f32 {
+    match compact() {
+        true => 14.,
+        false => metrics::CARD_GAP,
+    }
 }
 
 /// How a [`button`] looks.
@@ -226,6 +303,7 @@ pub enum Variant {
 
 /// A button of `CONTROL` height with an optional icon and label, ringed when `focused`.
 pub fn button(variant: Variant, glyph: Option<Icon>, text: Option<&str>, focused: bool) -> Rect {
+    let focused = ring(focused);
     let (fill, ink) = match variant {
         Variant::Primary => (color::PRIMARY, color::PRIMARY_FOREGROUND),
         Variant::Outline | Variant::Ghost => (Color::TRANSPARENT, color::FOREGROUND),
@@ -262,6 +340,16 @@ pub fn button(variant: Variant, glyph: Option<Icon>, text: Option<&str>, focused
 /// A scroll controller that glides to `target` (pixels from the top) whenever it changes, so a
 /// list keeps the D-pad's row in view.
 pub fn use_follow(target: f32) -> ScrollController {
+    use_glide(target, true)
+}
+
+/// A scroll controller that glides to `target` whenever it changes, even under a finger: the
+/// lyrics keep the sung line in place however the last input came.
+pub fn use_follow_always(target: f32) -> ScrollController {
+    use_glide(target, false)
+}
+
+fn use_glide(target: f32, yield_to_touch: bool) -> ScrollController {
     use freya::animation::{AnimNum, Ease, Function, use_animation_transition};
 
     let mut scroll = use_scroll_controller(ScrollConfig::default);
@@ -277,6 +365,11 @@ pub fn use_follow(target: f32) -> ScrollController {
     let applied = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(i32::MIN)));
     use_side_effect(move || {
         let y = -(glide.get().value() as i32);
+        // A finger scrolls the list itself; following the focus would yank it back.
+        if yield_to_touch && touch() {
+            applied.set(y);
+            return;
+        }
         if applied.replace(y) != y {
             scroll.scroll_to_y(y);
         }
@@ -293,6 +386,7 @@ pub fn follow_offset(index: usize, size: f32, view: f32) -> f32 {
 /// An icon button for a mode that is on or off (shuffle, repeat): white when on, grey when
 /// off, ringed when `focused`.
 pub fn toggle(glyph: Icon, on: bool, focused: bool) -> Rect {
+    let focused = ring(focused);
     rect()
         .width(Size::px(metrics::CONTROL + 8.))
         .height(Size::px(metrics::CONTROL + 8.))
@@ -343,6 +437,7 @@ pub fn tabs(entries: &[(Icon, &str)], selected: usize, focused: Option<usize>) -
                     false => Color::TRANSPARENT,
                 })
                 .border(focus_border(focused == Some(index)))
+                .on_press(tap(crate::nav::Target::Tab(index)))
                 .child(icon(*glyph, metrics::ICON, ink))
                 .child(line(*name, text::LABEL, ink).font_weight(FontWeight::SEMI_BOLD))
                 .into()

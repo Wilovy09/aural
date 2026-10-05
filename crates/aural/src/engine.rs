@@ -48,6 +48,8 @@ pub enum Command {
     /// Turn shuffle on or off; the current song keeps playing either way.
     Shuffle(bool),
     Repeat(Repeat),
+    /// Jump to this point of the current song.
+    Seek(Duration),
 }
 
 /// What happens when a song ends.
@@ -147,6 +149,8 @@ fn run(
 ) -> Result<()> {
     let output = rodio::OutputStreamBuilder::open_default_stream().context("no audio output")?;
     let say = |update: Update| {
+        // Android's controls follow from here, so they stay right in the background.
+        crate::media::observe(&update);
         let _ = updates.send(update);
     };
 
@@ -199,6 +203,21 @@ fn run(
                     true => index,
                     false => index.saturating_sub(1),
                 });
+            }
+            Some(Command::Seek(to)) => {
+                if let Some(playing) = current.as_mut() {
+                    let to = playing
+                        .duration
+                        .map_or(to, |duration| to.min(duration.saturating_sub(TICK)));
+                    match playing.sink.try_seek(to) {
+                        // The sink now counts from the point sought, in the current song.
+                        Ok(()) => {
+                            playing.offset = Duration::ZERO;
+                            say(Update::Position(to, playing.duration));
+                        }
+                        Err(error) => log::warn!("engine: cannot seek: {error}"),
+                    }
+                }
             }
             Some(Command::Client(next)) => api = next,
             Some(Command::Repeat(mode)) => repeat = mode,
@@ -443,7 +462,9 @@ fn decoder(loaded: &Loaded) -> Result<rodio::Decoder<crate::stream::Reader>> {
     let mut builder = rodio::Decoder::builder()
         .with_data(loaded.stream.reader())
         .with_hint("mp4")
-        .with_seekable(false);
+        // Seeking ahead of the download only waits for the bytes: the reader blocks until
+        // they arrive, and the download outruns playback.
+        .with_seekable(true);
     if let Some(total) = loaded.stream.total() {
         builder = builder.with_byte_len(total);
     }

@@ -1,4 +1,5 @@
-//! A cover from a url: a muted square with a music glyph until the image arrives.
+//! A cover: Apple Music's when the catalog has it, else the url's (YouTube's), on a muted
+//! square with a music glyph until an image arrives.
 
 use bytes::Bytes;
 use freya::prelude::*;
@@ -13,6 +14,8 @@ pub struct Cover {
     pub side: f32,
     pub radius: f32,
     pub edge: u32,
+    /// What to ask Apple's catalog for; its cover replaces the url's once found.
+    pub apple: Option<crate::artwork::Wanted>,
 }
 
 impl Cover {
@@ -22,7 +25,20 @@ impl Cover {
             side,
             radius,
             edge: library::THUMB_EDGE,
+            apple: None,
         }
+    }
+
+    /// Prefer Apple Music's cover for `wanted`, when there is something to ask for.
+    pub fn maybe_apple(mut self, wanted: Option<crate::artwork::Wanted>) -> Self {
+        self.apple = wanted;
+        self
+    }
+
+    /// Prefer Apple Music's cover for `wanted`.
+    pub fn apple(mut self, wanted: crate::artwork::Wanted) -> Self {
+        self.apple = Some(wanted);
+        self
     }
 
     /// Fetch at `edge` px instead of the thumbnail size.
@@ -34,10 +50,37 @@ impl Cover {
 
 impl Component for Cover {
     fn render(&self) -> impl IntoElement {
-        let url = self
-            .url
-            .as_deref()
-            .map(|url| library::sized(url, self.edge));
+        let edge = self.edge;
+        // Apple's cover: known already, found while this shows, or absent.
+        let wanted = use_reactive(&self.apple);
+        let mut apple = use_state(|| {
+            self.apple
+                .as_ref()
+                .and_then(|wanted| crate::artwork::cached(wanted, edge).flatten())
+        });
+        use_side_effect(move || {
+            let Some(asked) = wanted.read().clone() else {
+                apple.set(None);
+                return;
+            };
+            match crate::artwork::cached(&asked, edge) {
+                Some(answer) => apple.set(answer),
+                None => {
+                    apple.set(None);
+                    spawn(async move {
+                        let found = crate::artwork::find(asked.clone(), edge).await;
+                        if wanted.peek().as_ref() == Some(&asked) {
+                            apple.set(found);
+                        }
+                    });
+                }
+            }
+        });
+        let url = apple.read().clone().or_else(|| {
+            self.url
+                .as_deref()
+                .map(|url| library::sized(url, self.edge))
+        });
         let reactive = use_reactive(&url);
         // The bytes are kept with the url they came from: a render between a url change and
         // the effect below must not pair the new url's cache key with the old image.

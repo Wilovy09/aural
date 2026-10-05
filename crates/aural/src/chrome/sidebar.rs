@@ -3,6 +3,7 @@
 use freya::prelude::*;
 use freya::radio::use_radio;
 
+use crate::nav::Target;
 use crate::state::{AppState, Auth, Channel, NAV, Page, Zone};
 use crate::ui::{self, Icon, color, metrics, text};
 
@@ -15,12 +16,7 @@ impl Component for Sidebar {
         let auth = use_radio::<AppState, Channel>(Channel::Auth);
         let state = navigation.read();
         let focused = state.focus.zone == Zone::Sidebar;
-        let current = match &state.page {
-            Page::Detail(_) | Page::Artist(_) => {
-                state.history.first().cloned().unwrap_or(Page::Playlists)
-            }
-            page => page.clone(),
-        };
+        let current = current(&state);
 
         let account = match &auth.read().auth {
             Auth::SignedIn(Some(account)) => Some(account.name.clone()),
@@ -58,7 +54,7 @@ impl Component for Sidebar {
             .children(NAV.iter().enumerate().map(|(index, page)| {
                 let (glyph, name) = entry(page);
                 let active = *page == current;
-                let ring = focused && state.focus.sidebar == index;
+                let ring = ui::ring(focused && state.focus.sidebar == index);
                 rect()
                     .key(index)
                     .height(Size::px(metrics::CONTROL + 4.))
@@ -73,6 +69,7 @@ impl Component for Sidebar {
                         false => Color::TRANSPARENT,
                     })
                     .border(ui::focus_border(ring))
+                    .on_press(ui::tap(Target::Sidebar(index)))
                     .child(ui::icon(glyph, metrics::ICON, ink(active || ring)))
                     .child(ui::line(name, text::BODY, ink(active || ring)))
                     .into()
@@ -92,7 +89,17 @@ impl Component for Sidebar {
     }
 }
 
-fn entry(page: &Page) -> (Icon, &'static str) {
+/// The section a page belongs to: a playlist or artist opened from one stays under it.
+pub(crate) fn current(state: &AppState) -> Page {
+    match &state.page {
+        Page::Detail(_) | Page::Artist(_) => {
+            state.history.first().cloned().unwrap_or(Page::Playlists)
+        }
+        page => page.clone(),
+    }
+}
+
+pub(crate) fn entry(page: &Page) -> (Icon, &'static str) {
     match page {
         Page::Search => (Icon::Search, "Buscar"),
         Page::Songs => (Icon::HeartFilled, "Me gusta"),
