@@ -19,6 +19,7 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-aac", "symphonia-isomp4"] }
 motion = { path = "crates/motion" }
 lyrics = { path = "crates/lyrics" }
+webview = { path = "crates/webview" }
 ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "f213c0b" }
 
 [profile.release]

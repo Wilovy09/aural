@@ -1,0 +1,61 @@
+[package]
+name = "webview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A native sign-in window with a throwaway session, from Sonora (sonorahq)."
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSResponder",
+  "NSWindow",
+  "NSView",
+  "NSGraphics",
+  "NSScreen",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSDate",
+  "NSEnumerator",
+  "NSGeometry",
+  "NSHTTPCookie",
+  "NSString",
+  "NSURL",
+  "NSURLRequest",
+  "objc2-core-foundation",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-app-kit",
+  "objc2-core-foundation",
+  "WKHTTPCookieStore",
+  "WKNavigation",
+  "WKUserContentController",
+  "WKUserScript",
+  "WKWebView",
+  "WKWebViewConfiguration",
+  "WKWebsiteDataStore",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+dirs = "6"
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
