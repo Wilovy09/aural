@@ -182,9 +182,7 @@ async fn welcome(stream: TcpStream, events: Events) -> Result<()> {
                 }
                 _ => {
                     let reason = "código incorrecto".to_owned();
-                    socket
-                        .send(send(&ToController::Denied { reason })?)
-                        .await?;
+                    socket.send(send(&ToController::Denied { reason })?).await?;
                     anyhow::bail!("wrong code");
                 }
             }
@@ -204,8 +202,8 @@ async fn welcome(stream: TcpStream, events: Events) -> Result<()> {
     log::info!("connect: {name} controls this device");
     let mut heard = outbox().subscribe();
     // What plays now, before the updates.
-    let (state, queue) = with_playing(|playing| (playing.state.clone(), playing.queue.clone()))
-        .unwrap_or_default();
+    let (state, queue) =
+        with_playing(|playing| (playing.state.clone(), playing.queue.clone())).unwrap_or_default();
     socket
         .send(send(&ToController::Queue {
             queue,

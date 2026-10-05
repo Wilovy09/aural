@@ -18,8 +18,8 @@ pub async fn run(port: u16, events: Events) -> Result<()> {
     let host = format!("aural-{}.local.", &me.id[..8.min(me.id.len())]);
     let instance = format!("{} {}", me.name, &me.id[..4.min(me.id.len())]);
     let properties = [("id", me.id.as_str()), ("name", me.name.as_str())];
-    let info = ServiceInfo::new(SERVICE, &instance, &host, "", port, &properties[..])?
-        .enable_addr_auto();
+    let info =
+        ServiceInfo::new(SERVICE, &instance, &host, "", port, &properties[..])?.enable_addr_auto();
     daemon.register(info)?;
 
     let heard = daemon.browse(SERVICE)?;

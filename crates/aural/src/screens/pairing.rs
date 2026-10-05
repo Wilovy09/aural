@@ -47,7 +47,14 @@ impl Component for PairingCode {
                     ))
                     .child(
                         label()
-                            .text(pairing.code.chars().map(String::from).collect::<Vec<_>>().join(" "))
+                            .text(
+                                pairing
+                                    .code
+                                    .chars()
+                                    .map(String::from)
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
+                            )
                             .font_size(64.)
                             .font_weight(FontWeight::BOLD)
                             .color(color::FOREGROUND),

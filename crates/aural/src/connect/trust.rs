@@ -27,10 +27,7 @@ pub fn me() -> &'static Me {
                 let _ = std::fs::write(&path, &id);
                 id
             });
-        Me {
-            id,
-            name: name(),
-        }
+        Me { id, name: name() }
     })
 }
 

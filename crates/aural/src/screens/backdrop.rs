@@ -68,8 +68,7 @@ impl Component for Backdrop {
             };
             let id = song.id.clone();
             spawn(async move {
-                let apple =
-                    artwork::find(artwork::Wanted::song(&song), library::THUMB_EDGE).await;
+                let apple = artwork::find(artwork::Wanted::song(&song), library::THUMB_EDGE).await;
                 let youtube = song
                     .cover
                     .as_deref()

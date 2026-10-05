@@ -94,7 +94,9 @@ impl Component for Devices {
                 Key::Character(typed) if typed == "\n" || typed == "\r" => {
                     event.stop_propagation();
                     event.prevent_default();
-                    submit(entry.peek().clone(), &mut entry);
+                    // Read first: the borrow must end before `submit` empties the field.
+                    let typed = entry.peek().clone();
+                    submit(typed, &mut entry);
                     false
                 }
                 Key::Named(NamedKey::Enter | NamedKey::Escape | NamedKey::Shift) => true,
