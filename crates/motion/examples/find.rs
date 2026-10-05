@@ -1,4 +1,4 @@
-//! `cargo run -p motion --example find -- "<title>" "<artist>" [seconds]`: looks the album's
+//! `cargo run -p motion --example find -- "<title>" "<artist>" [seconds] [album]`: looks the album's
 //! motion artwork up and downloads the 486 px loop to the system temp folder.
 
 use std::time::Duration;
@@ -14,9 +14,15 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .and_then(|s| s.parse().ok())
         .map(Duration::from_secs);
+    let album = args.next();
     let search = MotionSearch::default();
     let Some(art) = search
-        .find(&MotionQuery::new(&title, &artist, None, duration))
+        .find(&MotionQuery::new(
+            &title,
+            &artist,
+            album.as_deref(),
+            duration,
+        ))
         .await?
     else {
         println!("no motion artwork");
