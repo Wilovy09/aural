@@ -147,7 +147,7 @@ impl Component for Fullscreen {
                             side,
                             match split {
                                 true => 6.,
-                                false => metrics::RADIUS * 2.,
+                                false => metrics::PLAYER_RADIUS * 2.,
                             },
                         )
                     }
@@ -182,7 +182,7 @@ impl Component for Fullscreen {
                     ..Cover::new(
                         song.as_ref().and_then(|s| s.cover.clone()),
                         side,
-                        metrics::RADIUS * 2.,
+                        metrics::PLAYER_RADIUS * 2.,
                     )
                 }
                 .edge(library::COVER_EDGE)

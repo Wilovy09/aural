@@ -75,7 +75,7 @@ fn row(key: usize, song: &Song, current: bool) -> impl IntoElement {
         .content(Content::Flex)
         .cross_align(Alignment::Center)
         .spacing(12.)
-        .corner_radius(metrics::RADIUS)
+        .corner_radius(metrics::PLAYER_RADIUS)
         .background(match current {
             true => color::BACKDROP_ROW,
             false => Color::TRANSPARENT,

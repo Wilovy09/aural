@@ -36,10 +36,17 @@ fn shelf_height() -> f32 {
 thread_local! {
     /// The field's accessibility id, so a key press can hand it the keyboard.
     static FIELD: Cell<Option<AccessibilityId>> = const { Cell::new(None) };
+    /// The field was asked for the keyboard before it was on screen.
+    static PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Gives the search field the keyboard (Android shows its own on a TV).
 pub fn edit() {
+    // A computer searches from the bar on top.
+    if crate::chrome::top_bar::edit() {
+        return;
+    }
+    PENDING.set(true);
     if let Some(field) = FIELD.get() {
         field.request_focus();
     }
@@ -47,6 +54,7 @@ pub fn edit() {
 
 /// Takes the keyboard away from the search field.
 pub fn leave() {
+    crate::chrome::top_bar::leave();
     if let Some(field) = FIELD.get() {
         field.request_unfocus();
     }
@@ -64,6 +72,12 @@ impl Component for Search {
 
         let field = use_a11y();
         FIELD.set(Some(field));
+        // Opened to type (⌘K): the field takes the keyboard once it is laid out.
+        use_hook(move || {
+            if PENDING.replace(false) {
+                spawn(async move { field.request_focus() });
+            }
+        });
         let focus = use_focus(field);
         // Typing follows the field's focus, however it got it (OK on a TV, a click, a tap).
         use_side_effect(move || {
@@ -162,7 +176,8 @@ impl Component for Search {
                     event.stop_propagation();
                     event.prevent_default();
                     leave();
-                    run(station, query.peek().clone());
+                    let typed = query.peek().clone();
+                    run(station, typed);
                     false
                 }
                 Key::Named(NamedKey::Enter | NamedKey::Escape | NamedKey::Shift) => true,
@@ -190,34 +205,37 @@ impl Component for Search {
                     .width(Size::fill())
                     .padding(ui::inset())
                     .spacing(18.)
-                    .child(
-                        rect()
-                            .width(Size::fill())
-                            .height(Size::px(48.))
-                            .padding((0., 8., 0., 14.))
-                            .direction(Direction::Horizontal)
-                            .content(Content::Flex)
-                            .cross_align(Alignment::Center)
-                            .spacing(10.)
-                            .corner_radius(24.)
-                            .background(color::SECONDARY)
-                            .border(field_border)
-                            .on_press(ui::tap(Target::Content(Spot::Action(0))))
-                            .child(ui::icon(Icon::Search, 18., color::MUTED_FOREGROUND))
-                            .child(rect().width(Size::flex(1.)).child(input))
-                            .maybe(has_query, |row| {
-                                row.child(
-                                    rect()
-                                        .width(Size::px(32.))
-                                        .height(Size::px(32.))
-                                        .center()
-                                        .corner_radius(16.)
-                                        .border(ui::focus_border(spot == Some(Spot::Action(1))))
-                                        .on_press(ui::tap(Target::Content(Spot::Action(1))))
-                                        .child(ui::icon(Icon::Close, 18., color::FOREGROUND)),
-                                )
-                            }),
-                    )
+                    // A computer types in the bar on top; here only on a TV or a phone.
+                    .maybe(!crate::chrome::top_bar::shown(), |page| {
+                        page.child(
+                            rect()
+                                .width(Size::fill())
+                                .height(Size::px(48.))
+                                .padding((0., 8., 0., 14.))
+                                .direction(Direction::Horizontal)
+                                .content(Content::Flex)
+                                .cross_align(Alignment::Center)
+                                .spacing(10.)
+                                .corner_radius(24.)
+                                .background(color::SECONDARY)
+                                .border(field_border)
+                                .on_press(ui::tap(Target::Content(Spot::Action(0))))
+                                .child(ui::icon(Icon::Search, 18., color::MUTED_FOREGROUND))
+                                .child(rect().width(Size::flex(1.)).child(input))
+                                .maybe(has_query, |row| {
+                                    row.child(
+                                        rect()
+                                            .width(Size::px(32.))
+                                            .height(Size::px(32.))
+                                            .center()
+                                            .corner_radius(16.)
+                                            .border(ui::focus_border(spot == Some(Spot::Action(1))))
+                                            .on_press(ui::tap(Target::Content(Spot::Action(1))))
+                                            .child(ui::icon(Icon::Close, 18., color::FOREGROUND)),
+                                    )
+                                }),
+                        )
+                    })
                     .maybe(results.is_some(), |page| {
                         page.child(chips(filter, spot, compact))
                     })
@@ -244,17 +262,26 @@ impl Component for Search {
 
 /// The filter chips: the chosen one filled white, the D-pad's one ringed.
 fn chips(filter: Filter, spot: Option<Spot>, compact: bool) -> impl IntoElement {
-    let row = rect()
+    let (height, pad, size) = match compact {
+        true => (34., 14., text::LABEL),
+        false => (40., 18., text::BODY),
+    };
+    rect()
+        .width(Size::fill())
         .direction(Direction::Horizontal)
-        .spacing(10.)
+        // A phone has no room for every chip on one line: they wrap.
+        .content(Content::Wrap {
+            wrap_spacing: Some(8.),
+        })
+        .spacing(8.)
         .children(Filter::ALL.iter().enumerate().map(|(at, chip)| {
             let chosen = *chip == filter;
             rect()
                 .key(at)
-                .height(Size::px(40.))
-                .padding((0., 18.))
+                .height(Size::px(height))
+                .padding((0., pad))
                 .center()
-                .corner_radius(20.)
+                .corner_radius(height / 2.)
                 .background(match chosen {
                     true => color::PRIMARY,
                     false => color::MUTED,
@@ -265,29 +292,18 @@ fn chips(filter: Filter, spot: Option<Spot>, compact: bool) -> impl IntoElement 
                 })
                 .on_press(ui::tap(Target::Content(Spot::Chip(at))))
                 .child(
-                    ui::line(
-                        chip.name(),
-                        text::BODY,
-                        match chosen {
+                    label()
+                        .text(chip.name())
+                        .font_size(size)
+                        .font_weight(FontWeight::SEMI_BOLD)
+                        .max_lines(1)
+                        .color(match chosen {
                             true => color::PRIMARY_FOREGROUND,
                             false => color::FOREGROUND,
-                        },
-                    )
-                    .font_weight(FontWeight::SEMI_BOLD),
+                        }),
                 )
                 .into()
-        }));
-    // A phone has no room for every chip: they scroll sideways under a finger.
-    match compact {
-        true => ScrollView::new()
-            .direction(Direction::Horizontal)
-            .show_scrollbar(false)
-            .width(Size::fill())
-            .height(Size::px(40.))
-            .child(row)
-            .into_element(),
-        false => row.into_element(),
-    }
+        }))
 }
 
 /// What the results are drawn from.
@@ -568,9 +584,11 @@ fn best_card(best: &Best, focused: bool, compact: bool) -> impl IntoElement {
         })
         .spacing(12.)
         .main_align(Alignment::Center)
-        .corner_radius(metrics::RADIUS + 4.)
-        .background(color::SECONDARY)
-        .border(ui::focus_border(focused))
+        .corner_radius(metrics::RADIUS_LG)
+        .background(match ui::ring(focused) {
+            true => color::RAISED,
+            false => color::SECONDARY,
+        })
         .on_press(ui::tap(Target::Content(Spot::Best)))
         .child(Cover {
             apple: match best {

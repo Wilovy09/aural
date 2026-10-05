@@ -8,17 +8,17 @@ use freya::prelude::*;
 use freya::radio::use_radio;
 
 use crate::images;
-use crate::library::{ArtistPage, Shelf};
+use crate::library::{self, ArtistPage, Shelf};
 use crate::nav::Target;
 use crate::screens::{cards, search, songs};
 use crate::state::{AppState, Channel, Load, Spot, Zone};
-use crate::ui::{self, Icon, Variant, color, metrics, text};
+use crate::ui::{self, Icon, color, metrics, text};
 
 /// Height of the banner: shorter on a phone.
 fn hero_height() -> f32 {
     match ui::compact() {
-        true => 300.,
-        false => 400.,
+        true => 340.,
+        false => 460.,
     }
 }
 /// Height of a section title.
@@ -44,6 +44,12 @@ impl Component for Artist {
         };
         drop(state);
         let load = detail.read().artist.clone();
+        // The photo's light washes the hero, so every artist's page has its own room.
+        let light = ui::tint::use_tint(
+            load.ready()
+                .and_then(|page| page.banner.clone())
+                .map(|url| library::sized(&url, library::THUMB_EDGE)),
+        );
         let playing = now.read().now.song.as_ref().map(|song| song.id.clone());
         let columns = ui::columns();
 
@@ -108,7 +114,7 @@ impl Component for Artist {
         ScrollView::new_controlled(scroll)
             .width(Size::fill())
             .height(Size::fill())
-            .child(hero(&page, spot))
+            .child(hero(&page, spot, light))
             .child(
                 rect()
                     .width(Size::fill())
@@ -126,8 +132,9 @@ impl Component for Artist {
 }
 
 /// The banner with the name, audience, description and the two buttons over its faded foot.
-fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
+fn hero(page: &ArtistPage, spot: Option<Spot>, light: Option<Color>) -> impl IntoElement {
     let compact = ui::compact();
+    let ring_light = light.unwrap_or(color::FOCUS_ON_PRIMARY);
     rect()
         .width(Size::fill())
         .height(Size::px(hero_height()))
@@ -137,7 +144,7 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                     .position(Position::new_absolute().top(0.).left(0.))
                     .width(Size::fill())
                     .height(Size::px(hero_height()))
-                    .child(Banner { url }),
+                    .child(Banner { url, light }),
             )
         })
         .child(
@@ -147,15 +154,16 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                 .layer(Layer::Relative(8))
                 .width(Size::fill())
                 .height(Size::px(hero_height()))
-                .padding((0., ui::inset(), 28., ui::inset()))
+                .padding((0., ui::inset(), 32., ui::inset()))
                 .main_align(Alignment::End)
-                .spacing(8.)
+                .spacing(10.)
+                .child(ui::eyebrow("Artista").color(color::ON_BACKDROP))
                 .child(
                     ui::line(
                         page.name.clone(),
                         match compact {
-                            true => text::DISPLAY * 1.2,
-                            false => text::DISPLAY * 1.6,
+                            true => text::DISPLAY * 1.3,
+                            false => text::DISPLAY * 2.2,
                         },
                         color::FOREGROUND,
                     )
@@ -163,7 +171,10 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                     .width(Size::fill()),
                 )
                 .map(page.audience.clone(), |hero, audience| {
-                    hero.child(ui::line(audience, text::BODY, color::ON_BACKDROP))
+                    hero.child(
+                        ui::line(audience, text::BODY, color::FOREGROUND)
+                            .font_weight(FontWeight::MEDIUM),
+                    )
                 })
                 .map(page.description.clone(), |hero, description| {
                     hero.child(
@@ -183,22 +194,24 @@ fn hero(page: &ArtistPage, spot: Option<Spot>) -> impl IntoElement {
                     rect()
                         .direction(Direction::Horizontal)
                         .spacing(10.)
-                        .margin((8., 0., 0., 0.))
+                        .margin((10., 0., 0., 0.))
                         .child(
-                            ui::button(
-                                Variant::Primary,
-                                Some(Icon::PlayFilled),
+                            ui::pill(
+                                true,
+                                Icon::PlayFilled,
                                 Some("Reproducir"),
                                 spot == Some(Spot::Action(0)),
+                                ring_light,
                             )
                             .on_press(ui::tap(Target::Content(Spot::Action(0)))),
                         )
                         .child(
-                            ui::button(
-                                Variant::Outline,
-                                Some(Icon::Shuffle),
+                            ui::pill(
+                                false,
+                                Icon::Shuffle,
                                 Some("Aleatorio"),
                                 spot == Some(Spot::Action(1)),
+                                ring_light,
                             )
                             .on_press(ui::tap(Target::Content(Spot::Action(1)))),
                         ),
@@ -260,6 +273,7 @@ fn section(title: &str) -> impl IntoElement {
 #[derive(PartialEq)]
 struct Banner {
     url: String,
+    light: Option<Color>,
 }
 
 impl Component for Banner {
@@ -301,7 +315,7 @@ impl Component for Banner {
                     .position(Position::new_absolute().top(0.).left(0.))
                     .width(Size::fill())
                     .height(Size::px(hero_height()))
-                    .child(fade()),
+                    .child(fade(self.light)),
             )
     }
 }
@@ -319,15 +333,28 @@ fn wide(url: &str) -> String {
 /// The banner's fade: a light tint over the picture, then dark toward the foot where the name
 /// and buttons sit, ending in the page's own colour. Drawn with Skia, since Freya's gradient
 /// fill draws nothing over an image here.
-fn fade() -> impl IntoElement {
+fn fade(light: Option<Color>) -> impl IntoElement {
     use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
     use skia_safe::{Color4f, Paint, Point, Rect, TileMode};
 
-    canvas(RenderCallback::new(|context: &mut CanvasContext| {
+    canvas(RenderCallback::new(move |context: &mut CanvasContext| {
         let (width, height) = (context.size.width, context.size.height);
-        let shade = |alpha: f32| Color4f::new(0.04, 0.04, 0.04, alpha);
-        let colors = [shade(0.19), shade(0.33), shade(0.82), shade(1.)];
-        let stops = [0., 0.4, 0.8, 1.];
+        let shade = |alpha: f32| Color4f::new(0.035, 0.035, 0.035, alpha);
+        // Halfway down, the dark takes on the photo's light before it closes into the page.
+        let tinted = |alpha: f32| match light {
+            Some(light) => {
+                let mixed = ui::tint::mix(color::BACKGROUND, light, 0.30);
+                Color4f::new(
+                    mixed.r() as f32 / 255.,
+                    mixed.g() as f32 / 255.,
+                    mixed.b() as f32 / 255.,
+                    alpha,
+                )
+            }
+            None => shade(alpha),
+        };
+        let colors = [shade(0.10), tinted(0.30), tinted(0.80), shade(1.)];
+        let stops = [0., 0.45, 0.8, 1.];
         let gradient = Gradient::new(
             Colors::new(&colors, Some(&stops[..]), TileMode::Clamp, None),
             Interpolation::default(),
