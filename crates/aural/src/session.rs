@@ -12,10 +12,10 @@ use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
 use ytmusic::YtMusic;
 
-use crate::{login, platform};
+use crate::platform;
 
 /// The cookies that prove a session is signed in.
-const PROOF: [&str; 2] = ["SAPISID", "__Secure-3PAPISID"];
+pub(crate) const PROOF: [&str; 2] = ["SAPISID", "__Secure-3PAPISID"];
 /// How often a signed-in session asks Google for fresh cookies, the cadence of an open tab.
 const ROTATION: Duration = Duration::from_secs(10 * 60);
 /// Account slots Google may hold one browser session for.
@@ -79,13 +79,20 @@ pub async fn restore() -> Result<Option<Session>> {
     Ok(Some(start(api, profile)))
 }
 
-/// Opens the sign-in window, then picks the account the cookies belong to and saves it. Blocks,
-/// so it runs on a worker thread; `say` hears each step.
-pub fn sign_in(say: &dyn Fn(String)) -> Result<Session> {
-    let header = match login::supported() {
-        true => login::web_sign_in(say)?,
-        false => manual_cookies()?,
-    };
+/// Brings back a `Cookie` header without a window of the app's own: Android's WebView, or a
+/// header pasted by hand where there is no window at all. Blocks, so it runs on a worker thread.
+pub fn cookies(say: &dyn Fn(String)) -> Result<String> {
+    #[cfg(target_os = "android")]
+    if crate::login::supported() {
+        return crate::login::web_sign_in(say);
+    }
+    let _ = say;
+    manual_cookies()
+}
+
+/// Picks the account `header` belongs to, saves it and starts its session. Blocks, so it runs
+/// on a worker thread; `say` hears each step.
+pub fn finish(header: &str, say: &dyn Fn(String)) -> Result<Session> {
     if !PROOF
         .iter()
         .any(|name| header.contains(&format!("{name}=")))
@@ -97,7 +104,7 @@ pub fn sign_in(say: &dyn Fn(String)) -> Result<Session> {
         .build()
         .context("cannot start tokio")?;
     say("buscando tu cuenta".into());
-    let saved = runtime.block_on(choose(&header))?;
+    let saved = runtime.block_on(choose(header))?;
     let body = serde_json::to_vec(&saved).context("cannot encode the session")?;
     std::fs::write(file(), body).context("cannot save the session")?;
     // Rotated cookies of an earlier account would replace the ones just brought back.

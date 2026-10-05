@@ -38,3 +38,4 @@ rquickjs = { version = "0.12", features = ["bindgen"] }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger.workspace = true
 dirs = "6"
+webview.workspace = true

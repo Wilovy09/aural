@@ -312,12 +312,15 @@ fn sign_in(mut station: Station, engine: Engine) {
         }
     });
     spawn(async move {
-        let result = runtime::blocking(move || {
-            session::sign_in(&|step: String| {
-                let _ = steps.send(step);
-            })
-        })
-        .await;
+        let say = move |step: String| {
+            let _ = steps.send(step);
+        };
+        let result = match cookies(say.clone()).await {
+            Ok(header) => runtime::blocking(move || session::finish(&header, &say))
+                .await
+                .map_err(anyhow::Error::from),
+            Err(error) => Ok(Err(error)),
+        };
         match result {
             Ok(Ok(session)) => {
                 set_client(session.api.clone(), &engine);
@@ -341,6 +344,16 @@ fn sign_in(mut station: Station, engine: Engine) {
             }
         }
     });
+}
+
+/// The `Cookie` header of a fresh sign-in. The desktop window lives on the main thread, so it is
+/// driven from here; Android's and the pasted header block, so they go to a worker.
+async fn cookies(say: impl Fn(String) + Clone + Send + 'static) -> anyhow::Result<String> {
+    #[cfg(not(target_os = "android"))]
+    if crate::login::supported() {
+        return crate::login::window_sign_in(say).await;
+    }
+    runtime::blocking(move || session::cookies(&say)).await?
 }
 
 fn sign_out(mut station: Station, engine: &Engine) {

@@ -1,6 +1,7 @@
-//! Google sign-in for YouTube Music: on Android, Google's page in a WebView
-//! (`dev.aural.app.Login`, see `android/java`) until the YouTube proof cookies show up. Cookie
-//! values are never logged or shown.
+//! Google sign-in for YouTube Music: Google's page in a browser window until the YouTube proof
+//! cookies show up. On Android that is a WebView (`dev.aural.app.Login`, see `android/java`);
+//! on macOS, Windows and Linux it is the `webview` crate's native window (WebKit, WebView2,
+//! WebKitGTK) over a throwaway session. Cookie values are never logged or shown.
 
 use std::time::{Duration, Instant};
 
@@ -13,16 +14,24 @@ const POLL: Duration = Duration::from_millis(500);
 /// How long the user gets to finish signing in.
 const PATIENCE: Duration = Duration::from_secs(10 * 60);
 
+/// Whether this platform has a sign-in window. On Linux it depends on webkit2gtk being
+/// installed.
+pub fn supported() -> bool {
+    #[cfg(target_os = "android")]
+    return true;
+    #[cfg(not(target_os = "android"))]
+    return webview::supported();
+}
+
 /// Opens the sign-in window and blocks until it hands back the `Cookie` header, reporting each
-/// page it lands on to `say`.
+/// page it lands on to `say`. Runs on a worker thread.
+#[cfg(target_os = "android")]
 pub fn web_sign_in(say: &dyn Fn(String)) -> Result<String> {
     platform::sign_in(say)
 }
 
-/// Whether this platform has a sign-in window.
-pub fn supported() -> bool {
-    cfg!(target_os = "android")
-}
+#[cfg(not(target_os = "android"))]
+pub use platform::window_sign_in;
 
 #[cfg(target_os = "android")]
 pub use platform::{data_dir, keep_screen_on, remember};
@@ -165,8 +174,32 @@ mod platform {
 mod platform {
     use super::*;
 
-    pub fn sign_in(_say: &dyn Fn(String)) -> Result<String> {
-        let _ = (SIGN_IN_URL, POLL, PATIENCE, Instant::now());
-        anyhow::bail!("no sign-in window on this platform yet")
+    /// The YouTube Music page the sign-in comes back to, and the domain its cookies live on.
+    const LANDING: &str = "music.youtube.com";
+    const DOMAIN: &str = "youtube.com";
+
+    /// Opens the native sign-in window and waits for the `Cookie` header. The window belongs to
+    /// the main thread, so this runs on Freya's executor there and sleeps on the io runtime.
+    pub async fn window_sign_in(say: impl Fn(String)) -> Result<String> {
+        let mut page = webview::Page::open(webview::Target {
+            url: SIGN_IN_URL.to_owned(),
+            landing: LANDING.to_owned(),
+            domain: DOMAIN.to_owned(),
+            proof: crate::session::PROOF.map(str::to_owned).to_vec(),
+            title: "Aural · Iniciar sesión".to_owned(),
+            agent: None,
+            script: None,
+        })?;
+        say("Inicia sesión en la ventana de Google".into());
+        let started = Instant::now();
+        while started.elapsed() < PATIENCE {
+            let _ = crate::runtime::spawn(async { tokio::time::sleep(POLL).await }).await;
+            match page.poll() {
+                webview::Poll::Pending => {}
+                webview::Poll::Closed => anyhow::bail!("sign-in cancelled"),
+                webview::Poll::Cookies(header) => return Ok(header),
+            }
+        }
+        anyhow::bail!("sign-in timed out")
     }
 }
