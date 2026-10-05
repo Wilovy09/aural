@@ -14,12 +14,19 @@ path = "src/main.rs"
 [dependencies]
 freya.workspace = true
 freya-winit.workspace = true
+# The Skia Freya renders with, for the mesh the backdrop warps (not re-exported by Freya).
+skia-safe = { package = "freya-skia-safe", version = "0.98" }
 log.workspace = true
 anyhow.workspace = true
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio.workspace = true
 rodio.workspace = true
 ytmusic.workspace = true
 motion.workspace = true
+lyrics.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }
@@ -30,3 +37,4 @@ rquickjs = { version = "0.12", features = ["bindgen"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger.workspace = true
+dirs = "6"

@@ -1,11 +1,10 @@
-//! Phase 0 sign-in check: opens Google's sign-in in an Android WebView (`dev.aural.app.Login`,
-//! see `android/java`), waits for the YouTube proof cookies and asks YouTube Music who they
-//! belong to. Cookie values are never logged or shown, only their count and the account name.
+//! Google sign-in for YouTube Music: on Android, Google's page in a WebView
+//! (`dev.aural.app.Login`, see `android/java`) until the YouTube proof cookies show up. Cookie
+//! values are never logged or shown.
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, Result};
-use tokio::sync::mpsc::UnboundedSender;
+use anyhow::Result;
 
 /// The same sign-in Sonora opens: Google's page, told to come back to YouTube Music.
 const SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
@@ -14,49 +13,25 @@ const POLL: Duration = Duration::from_millis(500);
 /// How long the user gets to finish signing in.
 const PATIENCE: Duration = Duration::from_secs(10 * 60);
 
-/// Runs the check on its own thread; every step is sent to `report`.
-pub fn check(report: UnboundedSender<String>) {
-    std::thread::spawn(move || {
-        let say = |line: String| {
-            log::info!("login: {line}");
-            let _ = report.send(line);
-        };
-        if let Err(error) = run(&say) {
-            say(format!("error: {error:#}"));
-        }
-    });
+/// Opens the sign-in window and blocks until it hands back the `Cookie` header, reporting each
+/// page it lands on to `say`.
+pub fn web_sign_in(say: &dyn Fn(String)) -> Result<String> {
+    platform::sign_in(say)
 }
 
-fn run(say: &dyn Fn(String)) -> Result<()> {
-    let header = platform::sign_in(say)?;
-    let count = header.split(';').filter(|pair| pair.contains('=')).count();
-    say(format!(
-        "cookies recibidas ({count}), verificando la cuenta"
-    ));
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("cannot start tokio")?;
-    let api = ytmusic::YtMusic::with_cookies(header);
-    let identities = runtime
-        .block_on(api.identities())
-        .context("cannot list accounts")?;
-    let names: Vec<_> = identities.iter().map(|i| i.profile.name.as_str()).collect();
-    say(format!(
-        "sesión OK: {} ({} cuentas)",
-        names.join(", "),
-        names.len()
-    ));
-    Ok(())
+/// Whether this platform has a sign-in window.
+pub fn supported() -> bool {
+    cfg!(target_os = "android")
 }
 
 #[cfg(target_os = "android")]
-pub use platform::{data_dir, remember};
+pub use platform::{data_dir, keep_screen_on, remember};
 
 #[cfg(target_os = "android")]
 mod platform {
     use std::sync::OnceLock;
+
+    use anyhow::Context as _;
 
     use freya::winit::platform::android::activity::AndroidApp;
     use jni::JavaVM;
@@ -77,6 +52,44 @@ mod platform {
     /// The app's private data folder.
     pub fn data_dir() -> Option<std::path::PathBuf> {
         APP.get()?.internal_data_path()
+    }
+
+    /// Adds or clears the window's keep-screen-on flag through `dev.aural.app.Screen`, which
+    /// changes it on Android's UI thread.
+    pub fn keep_screen_on(on: bool) -> Result<()> {
+        let app = APP.get().context("android_main has not run")?;
+        // SAFETY: android-activity hands out the process JavaVM.
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.context("no JavaVM")?;
+        let mut env = vm
+            .attach_current_thread()
+            .context("cannot attach to the JVM")?;
+        // SAFETY: a global reference to the activity, valid while the activity is alive.
+        let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+        let loader = env
+            .call_method(
+                &activity,
+                "getClassLoader",
+                "()Ljava/lang/ClassLoader;",
+                &[],
+            )?
+            .l()?;
+        let name = env.new_string("dev.aural.app.Screen")?;
+        let class: JClass = env
+            .call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?
+            .into();
+        env.call_static_method(
+            &class,
+            "keepOn",
+            "(Landroid/app/Activity;Z)V",
+            &[JValue::Object(&activity), JValue::Bool(on.into())],
+        )?;
+        Ok(())
     }
 
     /// Opens the window and waits for the cookie header, reporting each page it lands on.
@@ -154,6 +167,6 @@ mod platform {
 
     pub fn sign_in(_say: &dyn Fn(String)) -> Result<String> {
         let _ = (SIGN_IN_URL, POLL, PATIENCE, Instant::now());
-        anyhow::bail!("this check only runs on Android")
+        anyhow::bail!("no sign-in window on this platform yet")
     }
 }
