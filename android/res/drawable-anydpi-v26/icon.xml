@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8+ launchers mask this to their own shape; drawable/icon.xml is the plain tile. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/icon_background" />
+    <foreground android:drawable="@drawable/icon_foreground" />
+    <monochrome android:drawable="@drawable/icon_foreground" />
+</adaptive-icon>

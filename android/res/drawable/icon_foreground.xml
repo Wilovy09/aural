@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The adaptive icon's symbol, placed as in aural_icon.svg within the visible 72dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <group
+        android:scaleX="0.6667" android:scaleY="0.6667"
+        android:translateX="85.3" android:translateY="98.7">
+        <path
+            android:pathData="M126,340V250A130,130 0,0 1,386 250V340"
+            android:strokeWidth="24"
+            android:strokeAlpha="0.35"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M176,340V250A80,80 0,0 1,336 250V340"
+            android:strokeWidth="40"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M226,318a30,30 0,1 0,60 0a30,30 0,1 0,-60 0z" />
+    </group>
+</vector>
