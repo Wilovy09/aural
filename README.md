@@ -43,7 +43,9 @@
 | --- | --- |
 | Android TV (Android 9+, 32 and 64-bit ARM) | Working |
 | Android phones | Working |
-| macOS, Linux, Windows | Runs, but sign-in is not available yet |
+| macOS | Working |
+| Windows 10/11 | Builds; sign-in uses the WebView2 runtime that ships with Windows |
+| Linux | Builds; sign-in needs `webkit2gtk-4.1` (or 4.0) installed |
 
 ## Building
 
@@ -90,6 +92,7 @@ The APK is written to `build/aural.apk` and signed with your debug keystore. Ins
 crates/aural    the app: UI, navigation, playback engine, YouTube Music library
 crates/lyrics   lyrics search across providers, with word-level timing
 crates/motion   animated cover lookup and the Android hardware decoder
+crates/webview  native sign-in window for macOS, Windows and Linux
 android/        manifest, resources and the Java helpers (sign-in WebView, keep screen on)
 scripts/        Android build and packaging
 assets/         fonts, icons and logos
@@ -99,7 +102,7 @@ assets/         fonts, icons and logos
 
 Aural builds on the work of:
 
-- [Sonora](https://github.com/sonorahq): UI and lyrics providers
+- [Sonora](https://github.com/sonorahq): UI, lyrics providers and the desktop sign-in window
 - [Artwork API](https://github.com/boidushya/artwork.boidu.dev) for animated covers
 - [ytmusic-rs](https://github.com/sonorahq/ytmusic-rs): YouTube Music API
 - [kawarp](https://github.com/better-lyrics/kawarp): animated backdrop

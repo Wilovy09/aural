@@ -44,7 +44,9 @@
 | --- | --- |
 | Android TV (Android 9+, ARM de 32 y 64 bits) | Funciona |
 | Teléfonos Android | Funciona |
-| macOS, Linux, Windows | Abre, pero todavía no se puede iniciar sesión |
+| macOS | Funciona |
+| Windows 10/11 | Compila; el inicio de sesión usa el WebView2 que trae Windows |
+| Linux | Compila; el inicio de sesión necesita `webkit2gtk-4.1` (o 4.0) instalado |
 
 ## Compilar
 
@@ -91,6 +93,7 @@ El APK queda en `build/aural.apk`, firmado con tu keystore de debug. Instálalo 
 crates/aural    la app: interfaz, navegación, motor de reproducción, biblioteca de YouTube Music
 crates/lyrics   búsqueda de letras en varios proveedores, con tiempos por palabra
 crates/motion   búsqueda de portadas animadas y el decodificador por hardware de Android
+crates/webview  ventana nativa de inicio de sesión para macOS, Windows y Linux
 android/        manifest, recursos y los ayudantes en Java (WebView de inicio de sesión, pantalla encendida)
 scripts/        compilación y empaquetado para Android
 assets/         fuentes, íconos y logos
@@ -100,7 +103,7 @@ assets/         fuentes, íconos y logos
 
 Aural se apoya en el trabajo de:
 
-- [Sonora](https://github.com/sonorahq): interfaz y proveedores de letras
+- [Sonora](https://github.com/sonorahq): interfaz, proveedores de letras y la ventana de inicio de sesión de escritorio
 - [Artwork API](https://github.com/boidushya/artwork.boidu.dev) para portadas animadas
 - [ytmusic-rs](https://github.com/sonorahq/ytmusic-rs): API de YouTube Music
 - [kawarp](https://github.com/better-lyrics/kawarp): fondo animado
