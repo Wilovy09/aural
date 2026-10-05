@@ -3,31 +3,50 @@
 //! and size from here.
 
 mod cover;
+pub mod form_input;
+pub mod spectrum;
+pub mod tint;
 
 pub use cover::Cover;
 
 use freya::prelude::*;
 
-/// Colour tokens of the dark theme (Sonora's `Theme::dark`).
+/// Colour tokens: a dark room lit by a screen. Surfaces step up by a few points of lightness;
+/// edges are translucent white, never grey lines; text has three tiers; the one colour is the
+/// light of the cover that plays (see [`tint`]).
 pub mod color {
     use freya::prelude::Color;
 
-    pub const BACKGROUND: Color = Color::from_rgb(0x0a, 0x0a, 0x0a);
-    pub const FOREGROUND: Color = Color::from_rgb(0xfa, 0xfa, 0xfa);
-    pub const BORDER: Color = Color::from_argb(0x66, 0x50, 0x50, 0x50);
-    pub const MUTED: Color = Color::from_rgb(0x26, 0x26, 0x26);
-    pub const MUTED_FOREGROUND: Color = Color::from_rgb(0x90, 0x90, 0x90);
-    pub const SECONDARY: Color = Color::from_rgb(0x17, 0x17, 0x17);
-    pub const PRIMARY: Color = Color::from_rgb(0xfa, 0xfa, 0xfa);
-    pub const PRIMARY_FOREGROUND: Color = Color::from_rgb(0x17, 0x17, 0x17);
-    pub const SIDEBAR: Color = Color::from_rgb(0x0a, 0x0a, 0x0a);
-    pub const SIDEBAR_ACCENT: Color = Color::from_argb(0x66, 0x50, 0x50, 0x50);
-    pub const SIDEBAR_BORDER: Color = Color::from_rgb(0x26, 0x26, 0x26);
-    pub const TABLE_HEAD: Color = Color::from_argb(0xcc, 0x17, 0x17, 0x17);
+    /// The room: the canvas behind everything, sidebar included.
+    pub const BACKGROUND: Color = Color::from_rgb(0x09, 0x09, 0x09);
+    /// One step up: the player island, cards, the search field.
+    pub const SECONDARY: Color = Color::from_rgb(0x11, 0x11, 0x11);
+    /// Two steps up: chips, tiles waiting for art, raised controls.
+    pub const MUTED: Color = Color::from_rgb(0x18, 0x18, 0x18);
+    /// Three steps up: what is pressed or open.
+    pub const RAISED: Color = Color::from_rgb(0x22, 0x22, 0x22);
+    pub const FOREGROUND: Color = Color::from_rgb(0xf5, 0xf5, 0xf5);
+    /// Supporting text: artists, counts, labels.
+    pub const MUTED_FOREGROUND: Color = Color::from_rgb(0x99, 0x99, 0x99);
+    /// Metadata that should almost disappear: track numbers, column titles.
+    pub const FAINT: Color = Color::from_rgb(0x66, 0x66, 0x66);
+    pub const PRIMARY: Color = Color::from_rgb(0xf5, 0xf5, 0xf5);
+    pub const PRIMARY_FOREGROUND: Color = Color::from_rgb(0x0b, 0x0b, 0x0b);
+    pub const BORDER: Color = Color::from_argb(0x1f, 0xff, 0xff, 0xff);
+    pub const SIDEBAR: Color = BACKGROUND;
+    /// The open section in the sidebar.
+    pub const SIDEBAR_ACCENT: Color = Color::from_argb(0x14, 0xff, 0xff, 0xff);
+    pub const SIDEBAR_BORDER: Color = Color::from_argb(0x0f, 0xff, 0xff, 0xff);
+    pub const TABLE_HEAD: Color = Color::TRANSPARENT;
     pub const PROGRESS: Color = Color::from_rgb(0xf5, 0xf5, 0xf5);
-    /// The ring drawn around whatever the D-pad is on.
-    pub const FOCUS: Color = Color::from_rgb(0xfa, 0xfa, 0xfa);
-    pub const FOCUS_FILL: Color = Color::from_argb(0x33, 0xfa, 0xfa, 0xfa);
+    /// A row under the pointer.
+    pub const HOVER: Color = Color::from_argb(0x0f, 0xff, 0xff, 0xff);
+    /// The ring around a cover or button the D-pad is on.
+    pub const FOCUS: Color = Color::from_rgb(0xf5, 0xf5, 0xf5);
+    /// The fill of a row the D-pad is on: lit, not outlined.
+    pub const FOCUS_FILL: Color = Color::from_argb(0x1f, 0xff, 0xff, 0xff);
+    /// The light when nothing plays, or a cover has no colour of its own.
+    pub const LIGHT: Color = Color::from_rgb(0x8a, 0x8a, 0x8a);
     /// Secondary text over the fullscreen backdrop, whose colour depends on the cover.
     pub const ON_BACKDROP: Color = Color::from_argb(0xbf, 0xff, 0xff, 0xff);
     /// Frosted glass over the backdrop: its fill, its hairline edge, and a selected part.
@@ -54,15 +73,22 @@ pub mod text {
 
 /// Sizes of the shell and its rows.
 pub mod metrics {
-    pub const RADIUS: f32 = 10.;
+    /// The radius scale: controls, rows and covers, cards and the player, sheets.
+    pub const RADIUS_SM: f32 = 8.;
+    /// The fullscreen player's corners, kept as they were designed.
+    pub const PLAYER_RADIUS: f32 = 10.;
+    pub const RADIUS: f32 = 12.;
+    pub const RADIUS_LG: f32 = 16.;
+    pub const RADIUS_XL: f32 = 24.;
     pub const PAD: f32 = 8.;
     pub const INSET: f32 = 24.;
     pub const CONTROL: f32 = 32.;
     pub const ROW: f32 = 42.;
     pub const HEADER: f32 = 32.;
     pub const THUMB: f32 = 34.;
-    pub const PLAYER_BAR: f32 = 76.;
-    pub const SIDEBAR: f32 = 195.;
+    /// The player island and the margin under it.
+    pub const PLAYER_BAR: f32 = 80.;
+    pub const SIDEBAR: f32 = 232.;
     pub const ICON: f32 = 16.;
     pub const CARD: f32 = 150.;
     pub const CARD_GAP: f32 = 24.;
@@ -104,6 +130,9 @@ pub enum Icon {
     Maximize,
     Album,
     Cast,
+    Home,
+    Back,
+    Library,
     Motion,
     Playing,
     Music,
@@ -120,6 +149,11 @@ pub enum Icon {
 }
 
 impl Icon {
+    /// The icon's SVG, for components that take raw bytes.
+    pub fn bytes(self) -> Bytes {
+        Bytes::from_static(self.source().1)
+    }
+
     fn source(self) -> (&'static str, &'static [u8]) {
         macro_rules! svg {
             ($name:literal) => {
@@ -140,6 +174,9 @@ impl Icon {
             Icon::Maximize => svg!("maximize"),
             Icon::Album => svg!("disc-album"),
             Icon::Cast => svg!("cast"),
+            Icon::Home => svg!("house"),
+            Icon::Back => svg!("chevron-left"),
+            Icon::Library => svg!("library"),
             Icon::Motion => svg!("image-play"),
             Icon::Playing => svg!("music-2"),
             Icon::Music => svg!("music"),
@@ -222,11 +259,26 @@ pub fn focus_border(focused: bool) -> Border {
     }
 }
 
+thread_local! {
+    /// The text size setting's factor.
+    static TEXT: std::cell::Cell<f32> = const { std::cell::Cell::new(1.) };
+}
+
+/// Sets the factor every [`line`] is drawn at.
+pub fn set_text_scale(factor: f32) {
+    TEXT.set(factor);
+}
+
+/// `size` at the text size setting.
+pub fn sized(size: f32) -> f32 {
+    (size * TEXT.get()).round()
+}
+
 /// `text` as a one-line label in `size` and `tint`, cut with an ellipsis when it overflows.
 pub fn line(text: impl Into<String>, size: f32, tint: Color) -> Label {
     label()
         .text(text.into())
-        .font_size(size)
+        .font_size(sized(size))
         .color(tint)
         .max_lines(1)
         .text_overflow(TextOverflow::Ellipsis)
@@ -323,7 +375,7 @@ pub fn button(variant: Variant, glyph: Option<Icon>, text: Option<&str>, focused
         .cross_align(Alignment::Center)
         .main_align(Alignment::Center)
         .spacing(6.)
-        .corner_radius(metrics::RADIUS)
+        .corner_radius(metrics::PLAYER_RADIUS)
         .background(fill)
         .border(match (focused, variant) {
             (true, Variant::Primary) => Border::new().fill(color::FOCUS_ON_PRIMARY).width(3.),
@@ -336,6 +388,38 @@ pub fn button(variant: Variant, glyph: Option<Icon>, text: Option<&str>, focused
         })
         .map(text, |button, text| {
             button.child(line(text, text::LABEL, ink).font_weight(FontWeight::SEMI_BOLD))
+        })
+}
+
+/// A page's main action as a pill: Play white and solid, the others a raised dark pill. The
+/// D-pad's one wears a ring of `light`, the cover's, rather than a stark outline.
+pub fn pill(primary: bool, glyph: Icon, text: Option<&str>, focused: bool, light: Color) -> Rect {
+    let focused = ring(focused);
+    let (fill, ink) = match (primary, focused) {
+        (true, _) => (color::PRIMARY, color::PRIMARY_FOREGROUND),
+        (false, true) => (color::RAISED, color::FOREGROUND),
+        (false, false) => (color::MUTED, color::FOREGROUND),
+    };
+    rect()
+        .height(Size::px(42.))
+        .min_width(Size::px(42.))
+        .padding((0., if text.is_some() { 20. } else { 0. }))
+        .direction(Direction::Horizontal)
+        .cross_align(Alignment::Center)
+        .main_align(Alignment::Center)
+        .spacing(8.)
+        .corner_radius(21.)
+        .background(fill)
+        .border(match focused {
+            true => Border::new()
+                .fill(light)
+                .width(3.)
+                .alignment(BorderAlignment::Outer),
+            false => Border::new().fill(Color::TRANSPARENT).width(0.),
+        })
+        .child(icon(glyph, 18., ink))
+        .map(text, |button, text| {
+            button.child(line(text, text::BODY, ink).font_weight(FontWeight::SEMI_BOLD))
         })
 }
 
@@ -393,7 +477,7 @@ pub fn toggle(glyph: Icon, on: bool, focused: bool) -> Rect {
         .width(Size::px(metrics::CONTROL + 8.))
         .height(Size::px(metrics::CONTROL + 8.))
         .center()
-        .corner_radius(metrics::RADIUS)
+        .corner_radius(metrics::PLAYER_RADIUS)
         .background(match focused {
             true => color::FOCUS_FILL,
             false => Color::TRANSPARENT,
@@ -417,7 +501,7 @@ pub fn tabs(entries: &[(Icon, &str)], selected: usize, focused: Option<usize>) -
         .direction(Direction::Horizontal)
         .padding(4.)
         .spacing(4.)
-        .corner_radius(metrics::RADIUS + 4.)
+        .corner_radius(metrics::PLAYER_RADIUS + 4.)
         .background(color::GLASS)
         .border(Border::new().fill(color::GLASS_EDGE).width(1.))
         .shadow((0., 8., 24., 0., Color::from_argb(0x33, 0, 0, 0)))
@@ -433,7 +517,7 @@ pub fn tabs(entries: &[(Icon, &str)], selected: usize, focused: Option<usize>) -
                 .direction(Direction::Horizontal)
                 .cross_align(Alignment::Center)
                 .spacing(6.)
-                .corner_radius(metrics::RADIUS)
+                .corner_radius(metrics::PLAYER_RADIUS)
                 .background(match index == selected {
                     true => color::GLASS_SELECTED,
                     false => Color::TRANSPARENT,
