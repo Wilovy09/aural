@@ -32,6 +32,8 @@ impl Component for QueuePanel {
         let first = state.now.index + 1;
         drop(state);
         let count = upcoming.len();
+        let moving = use_state(|| None::<Moving>);
+        let scroll = use_scroll_controller(ScrollConfig::default);
 
         rect()
             .width(Size::fill())
@@ -54,96 +56,163 @@ impl Component for QueuePanel {
                 ))
             })
             .child(
-                // Each song coming up can be dragged onto another to take its place.
-                VirtualScrollView::new_with_data((upcoming, first), |index, (upcoming, first)| {
-                    Movable {
-                        at: first + index,
-                        song: upcoming[index].clone(),
-                    }
-                    .into_element()
-                })
-                .length(count)
-                .item_size(ROW)
-                .show_scrollbar(false)
-                .width(Size::fill())
-                .height(Size::flex(1.)),
+                rect().width(Size::fill()).height(Size::flex(1.)).child(
+                    // A finger scrolls through `TouchScroll`, which leaves sideways swipes and
+                    // the grips' drags to the rows.
+                    ui::touch_scroll::TouchScroll {
+                        scroll,
+                        content: VirtualScrollView::new_with_data_controlled(
+                            (upcoming, first, moving),
+                            |index, (upcoming, first, moving)| {
+                                Movable {
+                                    at: first + index,
+                                    song: upcoming[index].clone(),
+                                    moving: *moving,
+                                    first: *first,
+                                    last: first + upcoming.len() - 1,
+                                }
+                                .into_element()
+                            },
+                            scroll,
+                        )
+                        .length(count)
+                        .item_size(ROW)
+                        .show_scrollbar(false)
+                        .drag_scrolling(false)
+                        .width(Size::fill())
+                        .height(Size::fill())
+                        .into_element(),
+                    },
+                ),
             )
     }
 }
 
-/// A song coming up: swiped to the left it leaves the queue; dragged by its grip it moves,
-/// dropped onto another song's place, which a line marks while it is dragged over.
+/// A song being moved by its grip: where it was, where it would land, and where the pointer
+/// first pressed.
+#[derive(Clone, Copy, PartialEq)]
+struct Moving {
+    from: usize,
+    to: usize,
+    y: f64,
+}
+
+/// A song coming up: swiped to the left it leaves the queue; dragged by its grip, with a
+/// finger or the mouse, it moves up or down, a line marking where it will land.
 #[derive(PartialEq)]
 struct Movable {
     /// Its place in the queue.
     at: usize,
     song: Song,
+    moving: State<Option<Moving>>,
+    /// The places songs coming up can move between.
+    first: usize,
+    last: usize,
 }
 
 impl Component for Movable {
     fn render(&self) -> impl IntoElement {
-        let mut over = use_state(|| false);
-        let at = self.at;
-        // The copy that follows the pointer: the row, lifted.
-        let lifted = rect()
-            .width(Size::px(360.))
-            .corner_radius(metrics::RADIUS)
-            .background(color::RAISED)
-            .shadow((0., 10., 30., 0., Color::from_argb(0x66, 0, 0, 0)))
-            .child(row(at, &self.song, false));
-        let grip = DragZone::new(
-            at,
+        let (at, first, last) = (self.at, self.first, self.last);
+        let mut moving = self.moving;
+        let now = *moving.read();
+        let held = now.is_some_and(|it| it.from == at);
+        // A line where the song would land: above this one when it moves up, below when down.
+        let (above, below) = match now {
+            Some(it) if it.to == at && it.to < it.from => (true, false),
+            Some(it) if it.to == at && it.to > it.from => (false, true),
+            _ => (false, false),
+        };
+        let mark = |on: bool| {
             rect()
-                .width(Size::px(36.))
-                .height(Size::px(ROW - 2.))
-                .center()
-                .child(ui::icon(Icon::Grip, 18., color::ON_BACKDROP))
-                .into_element(),
-        )
-        .drag_element(lifted);
+                .width(Size::fill())
+                .height(Size::px(2.))
+                .corner_radius(1.)
+                .background(match on {
+                    true => color::FOREGROUND,
+                    false => Color::TRANSPARENT,
+                })
+        };
+        let grip = rect()
+            .width(Size::px(44.))
+            .height(Size::px(ROW - 4.))
+            .center()
+            // The grip keeps its press: dragging it moves the song, it is neither a swipe nor
+            // a scroll.
+            .on_pointer_down(move |event: Event<PointerEventData>| {
+                event.stop_propagation();
+                moving.set(Some(Moving {
+                    from: at,
+                    to: at,
+                    y: event.global_location().y,
+                }));
+            })
+            .on_global_pointer_move(move |event: Event<PointerEventData>| {
+                // Read first: the borrow must end before the state is written.
+                let Some(it) = *moving.peek() else {
+                    return;
+                };
+                if it.from != at {
+                    return;
+                }
+                let rows = ((event.global_location().y - it.y) / ROW as f64).round() as i64;
+                let to = (at as i64 + rows).clamp(first as i64, last as i64) as usize;
+                ui::swipe::mark();
+                if to != it.to {
+                    moving.set(Some(Moving { to, ..it }));
+                }
+            })
+            .on_global_pointer_press(move |_: Event<PointerEventData>| {
+                let Some(it) = *moving.peek() else {
+                    return;
+                };
+                if it.from != at {
+                    return;
+                }
+                moving.set(None);
+                if it.to != it.from {
+                    crate::app::move_in_queue(it.from, it.to);
+                }
+            })
+            .child(ui::icon(
+                Icon::Grip,
+                18.,
+                match held {
+                    true => color::FOREGROUND,
+                    false => color::ON_BACKDROP,
+                },
+            ));
         let line = rect()
             .width(Size::fill())
             .direction(Direction::Horizontal)
             .content(Content::Flex)
             .cross_align(Alignment::Center)
+            .corner_radius(metrics::RADIUS)
+            .background(match held {
+                true => color::GLASS_SELECTED,
+                false => Color::TRANSPARENT,
+            })
             .child(
                 rect()
                     .width(Size::flex(1.))
                     .child(row(at, &self.song, false)),
             )
-            // The grip keeps its press: dragging it moves the song, it is not a swipe.
-            .child(
-                rect()
-                    .on_pointer_down(|event: Event<PointerEventData>| event.stop_propagation())
-                    .child(grip),
-            );
-        DropZone::new(
-            rect()
-                .width(Size::fill())
-                .child(
-                    rect()
-                        .width(Size::fill())
-                        .height(Size::px(2.))
-                        .corner_radius(1.)
-                        .background(match *over.read() {
-                            true => color::FOREGROUND,
-                            false => Color::TRANSPARENT,
-                        }),
-                )
-                .child(ui::swipe::Swipe {
-                    content: line.into_element(),
-                    glyph: Icon::Close,
-                    label: "Quitar de la cola",
-                    tint: color::DANGER,
-                    surface: color::BACKDROP_ROW,
-                    height: ROW - 2.,
-                    on_swipe: EventHandler::new(move |_| crate::app::remove_from_queue(at)),
-                    key: DiffKey::default(),
-                }),
-            move |from: usize| crate::app::move_in_queue(from, at),
-        )
-        .on_drag_over(move |inside: bool| over.set(inside))
-        .key(at)
+            .child(grip);
+        rect()
+            .key(at)
+            .width(Size::fill())
+            .height(Size::px(ROW))
+            .child(mark(above))
+            .child(ui::swipe::Swipe {
+                content: line.into_element(),
+                glyph: Icon::Close,
+                label: "Quitar de la cola",
+                tint: color::DANGER,
+                surface: color::BACKDROP_ROW,
+                height: ROW - 4.,
+                on_swipe: EventHandler::new(move |_| crate::app::remove_from_queue(at)),
+                key: DiffKey::default(),
+            })
+            .child(mark(below))
     }
 }
 
