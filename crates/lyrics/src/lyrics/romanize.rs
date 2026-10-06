@@ -139,6 +139,7 @@ mod tests {
     #[test]
     fn generates_primary_and_background_romanization() {
         let mut lines = vec![LyricsLine {
+            translation: None,
             start: Duration::ZERO,
             end: None,
             text: "Привет".to_owned(),

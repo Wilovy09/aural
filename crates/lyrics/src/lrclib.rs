@@ -155,6 +155,7 @@ fn filed(text: &str) -> Option<Vec<LyricsLine>> {
         .lines
         .into_iter()
         .map(|line| LyricsLine {
+            translation: None,
             start: Duration::from_millis(line.start_ms),
             end: line.end_ms.map(Duration::from_millis),
             words: worded(&line.words),

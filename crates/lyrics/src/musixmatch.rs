@@ -254,6 +254,7 @@ fn verse(sung: Rich) -> LyricsLine {
     }
 
     LyricsLine {
+        translation: None,
         start,
         end: Some(end),
         text: sung.text,
@@ -294,6 +295,7 @@ fn cued(cues: &[Cue]) -> Vec<LyricsLine> {
     cues.iter()
         .enumerate()
         .map(|(index, cue)| LyricsLine {
+            translation: None,
             start: starts[index],
             end: starts.get(index + 1).copied(),
             text: cue.text.clone(),

@@ -281,6 +281,7 @@ mod tests {
 
     fn line(start: u64, end: u64, text: &str) -> LyricsLine {
         LyricsLine {
+            translation: None,
             start: Duration::from_secs(start),
             end: Some(Duration::from_secs(end)),
             text: text.to_owned(),

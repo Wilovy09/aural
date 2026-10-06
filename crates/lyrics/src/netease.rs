@@ -309,6 +309,7 @@ fn read_yrc(line: &str) -> Option<LyricsLine> {
         return None;
     }
     Some(LyricsLine {
+        translation: None,
         start,
         end: Some(start + span),
         words: (!words.is_empty()).then_some(words),
