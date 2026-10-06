@@ -30,12 +30,22 @@
 ## Funciones
 
 - **Tu biblioteca de YouTube Music**: canciones que te gustan, playlists y álbumes, al iniciar sesión con tu cuenta de Google.
-- **Búsqueda** de canciones, artistas, álbumes y playlists, con mejor resultado y filtros.
+- **Inicio** con tu feed de YouTube Music: selección rápida y estantes de álbumes, mezclas y playlists.
+- **Búsqueda** de canciones, artistas, álbumes y playlists, con mejor resultado y filtros. En escritorio vive en la barra superior (⌘K / Ctrl K).
 - **Páginas de artista** como en YouTube Music: banner, oyentes mensuales, canciones más populares, álbumes, sencillos, playlists y artistas relacionados.
-- **Reproducción en streaming** sin cortes entre canciones, con volumen normalizado, aleatorio y repetir.
+- **Reproducción en streaming** sin cortes entre canciones, con volumen normalizado, aleatorio, repetir y adelantar o retroceder (arrastrando la barra, o izquierda y derecha en el control).
 - **Letras sincronizadas**: palabra por palabra cuando existen, con los duetos separados por voz. Se buscan primero en Apple Music y luego en LRCLIB, Musixmatch, NetEase, KuGou y YouTube.
+- **Me gusta**: dale o quita me gusta a una canción desde el reproductor, la pantalla completa o su fila, sincronizado con tu cuenta de YouTube Music.
+- **Cola a tu medida**: arrastra una canción por su agarradera para moverla, desliza una canción a la izquierda para agregarla a la cola y desliza una de la cola a la izquierda para quitarla.
+- **Traducción de letras**: cada línea en español bajo la original, de Apple Music o de las traducciones humanas de Musixmatch, o una traducción automática cuando no hay.
+- **Portadas de Apple Music** en toda la app, con la miniatura de YouTube como respaldo.
 - **Portadas animadas** (opcionales), buscadas en Apple Music y decodificadas en el dispositivo.
 - **Reproductor a pantalla completa** con fondo animado a partir de la portada, cola, y modos de pantalla limpia y nocturno.
+- **Luz de portada**: la portada de la canción que suena tiñe suavemente la app.
+- **Aural Connect**: reproduce en otro Aural de tu Wi-Fi y contrólalo desde tu celular o computadora, como Spotify Connect. Se empareja una vez con un código de 4 dígitos.
+- **Controles de Android**: el reproductor en los ajustes rápidos y la pantalla de bloqueo, y música que sigue sonando en segundo plano.
+- **Diseño para celular** táctil: pestañas abajo, mini reproductor y reproductor a pantalla completa vertical.
+- **Ajustes**: la foto de tu cuenta, tamaño del texto y de la interfaz.
 - **Pensado para el control de la TV**: todo funciona con las flechas, OK y Atrás.
 
 ## Plataformas
@@ -86,6 +96,7 @@ El APK queda en `build/aural.apk`, firmado con tu keystore de debug. Instálalo 
 | Flechas / D-pad | Moverse |
 | Enter / OK | Seleccionar |
 | Esc / Atrás | Regresar |
+| ⌘K / Ctrl K | Buscar (escritorio) |
 
 ## Estructura
 
@@ -94,7 +105,8 @@ crates/aural    la app: interfaz, navegación, motor de reproducción, bibliotec
 crates/lyrics   búsqueda de letras en varios proveedores, con tiempos por palabra
 crates/motion   búsqueda de portadas animadas y el decodificador por hardware de Android
 crates/webview  ventana nativa de inicio de sesión para macOS, Windows y Linux
-android/        manifest, recursos y los ayudantes en Java (WebView de inicio de sesión, pantalla encendida)
+crates/aural/src/connect  Aural Connect: descubrimiento, emparejamiento y control remoto
+android/        manifest, recursos y los ayudantes en Java (WebView de inicio de sesión, sesión de medios, pantalla encendida)
 scripts/        compilación y empaquetado para Android
 assets/         fuentes, íconos y logos
 ```
@@ -110,7 +122,7 @@ Aural se apoya en el trabajo de:
 - [Freya](https://github.com/marc2332/freya): framework de interfaz
 - [Lucide](https://lucide.dev): íconos
 
-Aural no está afiliado a YouTube, Google ni Apple.
+Aural no está afiliado a YouTube, Google, Apple ni Musixmatch.
 
 ## Licencia
 
