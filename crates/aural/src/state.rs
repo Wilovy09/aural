@@ -127,10 +127,12 @@ impl Default for Focus {
 pub const ARTIST_TOP: usize = 5;
 
 /// The player bar's buttons, left to right.
-pub const PLAYER_BUTTONS: usize = 5;
+pub const PLAYER_BUTTONS: usize = 6;
+/// The player bar's like button: drawn beside the song, on the left of the transport.
+pub const PLAYER_LIKE: usize = 5;
 /// The fullscreen transport's buttons, left to right: shuffle, previous, play, next, repeat,
 /// clear the screen, night mode.
-pub const TRANSPORT_BUTTONS: usize = 7;
+pub const TRANSPORT_BUTTONS: usize = 9;
 
 /// How much of the fullscreen player shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -182,6 +184,8 @@ pub struct Sheet {
     pub source: Option<&'static str>,
     /// Who wrote the song, when the provider says.
     pub writers: Vec<String>,
+    /// The lines in the listener's language, while translating is on.
+    pub translation: Load<Option<lyrics::Translation>>,
 }
 
 /// How far into the song, kept apart because it ticks four times a second.
@@ -261,6 +265,8 @@ pub struct AppState {
     /// The text and interface size settings.
     pub text: crate::settings::Scale,
     pub interface: crate::settings::Scale,
+    /// Whether the lyrics show their translation under each line.
+    pub translate: bool,
     /// Sign out was pressed once and waits for a second OK.
     pub confirm_sign_out: bool,
     pub now: Now,
@@ -303,6 +309,13 @@ impl Default for Page {
 }
 
 impl AppState {
+    /// Whether the account likes the song `id`.
+    pub fn liked(&self, id: &str) -> bool {
+        self.library
+            .ready()
+            .is_some_and(|library| library.liked.iter().any(|song| song.id == id))
+    }
+
     /// The songs of the page on screen, when it lists songs.
     pub fn songs(&self) -> Option<&[Song]> {
         match &self.page {

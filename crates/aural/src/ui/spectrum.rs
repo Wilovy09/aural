@@ -20,12 +20,24 @@ const BARS: [Bar; 5] = [
         x: 180.,
         height: 43.,
         scale: &[(0., 1.), (0.52, 0.023), (0.96, 1.), (1., 1.)],
-        cap: &[(0., 129.), (0.16, 129.), (0.56, 165.), (0.96, 129.), (1., 129.)],
+        cap: &[
+            (0., 129.),
+            (0.16, 129.),
+            (0.56, 165.),
+            (0.96, 129.),
+            (1., 129.),
+        ],
     },
     Bar {
         x: 190.,
         height: 26.,
-        scale: &[(0., 1.), (0.28, 1.65), (0.8, 0.05), (0.96, 0.86), (1., 0.86)],
+        scale: &[
+            (0., 1.),
+            (0.28, 1.65),
+            (0.8, 0.05),
+            (0.96, 0.86),
+            (1., 0.86),
+        ],
         cap: &[
             (0., 146.),
             (0.28, 129.),
@@ -38,13 +50,25 @@ const BARS: [Bar; 5] = [
     Bar {
         x: 200.,
         height: 34.,
-        scale: &[(0., 1.), (0.32, 0.033), (0.8, 1.263), (0.96, 1.013), (1., 1.013)],
+        scale: &[
+            (0., 1.),
+            (0.32, 0.033),
+            (0.8, 1.263),
+            (0.96, 1.013),
+            (1., 1.013),
+        ],
         cap: &[(0., 129.), (0.36, 165.), (0.8, 129.), (1., 129.)],
     },
     Bar {
         x: 210.,
         height: 21.,
-        scale: &[(0., 0.759), (0.28, 2.069), (0.8, 0.039), (0.96, 0.603), (1., 0.603)],
+        scale: &[
+            (0., 0.759),
+            (0.28, 2.069),
+            (0.8, 0.039),
+            (0.96, 0.603),
+            (1., 0.603),
+        ],
         cap: &[
             (0., 156.),
             (0.24, 129.),
@@ -57,7 +81,13 @@ const BARS: [Bar; 5] = [
     Bar {
         x: 220.,
         height: 9.,
-        scale: &[(0., 2.556), (0.2, 0.096), (0.72, 4.776), (0.96, 2.58), (1., 2.58)],
+        scale: &[
+            (0., 2.556),
+            (0.2, 0.096),
+            (0.72, 4.776),
+            (0.96, 2.58),
+            (1., 2.58),
+        ],
         cap: &[
             (0., 149.),
             (0.2, 165.),
@@ -85,7 +115,11 @@ fn at(keys: &[(f32, f32)], time: f32) -> f32 {
     for pair in keys.windows(2) {
         let ((from, a), (to, b)) = (pair[0], pair[1]);
         if time <= to {
-            let share = if to > from { (time - from) / (to - from) } else { 1. };
+            let share = if to > from {
+                (time - from) / (to - from)
+            } else {
+                1.
+            };
             return a + (b - a) * share.clamp(0., 1.);
         }
     }
@@ -136,15 +170,11 @@ impl Component for Spectrum {
                 let tall = bar.height * at(bar.scale, time);
                 let (x0, y0) = place(bar.x - BAR / 2., FLOOR - tall);
                 let (x1, y1) = place(bar.x + BAR / 2., FLOOR);
-                context
-                    .canvas
-                    .draw_rect(Rect::new(x0, y0, x1, y1), &paint);
+                context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
                 let cap = at(bar.cap, time);
                 let (x0, y0) = place(bar.x - BAR / 2., cap - CAP);
                 let (x1, y1) = place(bar.x + BAR / 2., cap);
-                context
-                    .canvas
-                    .draw_rect(Rect::new(x0, y0, x1, y1), &paint);
+                context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
             }
         }))
         // A new key every frame, so the canvas is drawn again as the clock moves.

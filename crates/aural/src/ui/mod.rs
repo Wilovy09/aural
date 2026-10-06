@@ -5,6 +5,7 @@
 mod cover;
 pub mod form_input;
 pub mod spectrum;
+pub mod swipe;
 pub mod tint;
 
 pub use cover::Cover;
@@ -133,6 +134,9 @@ pub enum Icon {
     Home,
     Back,
     Library,
+    Translate,
+    Heart,
+    Grip,
     Motion,
     Playing,
     Music,
@@ -177,6 +181,9 @@ impl Icon {
             Icon::Home => svg!("house"),
             Icon::Back => svg!("chevron-left"),
             Icon::Library => svg!("library"),
+            Icon::Translate => svg!("languages"),
+            Icon::Heart => svg!("heart"),
+            Icon::Grip => svg!("grip-vertical"),
             Icon::Motion => svg!("image-play"),
             Icon::Playing => svg!("music-2"),
             Icon::Music => svg!("music"),
@@ -247,6 +254,10 @@ pub fn ring(focused: bool) -> bool {
 pub fn tap(target: crate::nav::Target) -> impl FnMut(Event<PressEventData>) + 'static {
     move |event: Event<PressEventData>| {
         event.stop_propagation();
+        // The release that ends a swipe is not a tap on the row.
+        if swipe::just_swiped() {
+            return;
+        }
         crate::app::tap(target);
     }
 }
@@ -389,6 +400,14 @@ pub fn button(variant: Variant, glyph: Option<Icon>, text: Option<&str>, focused
         .map(text, |button, text| {
             button.child(line(text, text::LABEL, ink).font_weight(FontWeight::SEMI_BOLD))
         })
+}
+
+/// The like heart: filled in the cover's `light` when liked, an outline in `ink` when not.
+pub fn heart(liked: bool, size: f32, light: Color, ink: Color) -> impl IntoElement {
+    match liked {
+        true => icon(Icon::HeartFilled, size, light),
+        false => icon(Icon::Heart, size, ink),
+    }
 }
 
 /// A page's main action as a pill: Play white and solid, the others a raised dark pill. The

@@ -50,6 +50,16 @@ pub enum Command {
     Repeat(Repeat),
     /// Jump to this point of the current song.
     Seek(Duration),
+    /// Move the song at `from` in the queue (play order) to `to`.
+    Move {
+        from: usize,
+        to: usize,
+    },
+    /// Add a song to the queue: after the song playing and the songs added before it, or on
+    /// its own when nothing plays.
+    Enqueue(Song),
+    /// Take the song at this place out of the queue (not the one playing).
+    Remove(usize),
 }
 
 /// What happens when a song ends.
@@ -162,6 +172,8 @@ fn run(
     let mut current: Option<Playing> = None;
     let mut shuffled = false;
     let mut repeat = Repeat::Off;
+    // How many songs added with `Enqueue` wait right after the song playing.
+    let mut added = 0usize;
 
     loop {
         let command = match inbox.recv_timeout(TICK) {
@@ -175,6 +187,7 @@ fn run(
                 queue: next,
                 index: at,
             }) => {
+                added = 0;
                 original = next.clone();
                 queue = next;
                 jump = Some(at);
@@ -220,6 +233,60 @@ fn run(
                     }
                 }
             }
+            Some(Command::Move { from, to }) => {
+                if from < queue.len() && to < queue.len() && from != to {
+                    let song = queue.remove(from);
+                    queue.insert(to, song);
+                    index = moved(index, from, to);
+                    // In play order, the original order follows too, so turning shuffle off
+                    // later keeps the songs where they were put.
+                    if !shuffled && original.len() == queue.len() {
+                        original = queue.clone();
+                    }
+                    // What comes next may have changed: a fetched next song no longer fits.
+                    if let Some(playing) = current.as_mut() {
+                        playing.preload = None;
+                    }
+                    say(Update::Queue(queue.clone(), index));
+                }
+            }
+            Some(Command::Enqueue(song)) => {
+                if queue.is_empty() {
+                    original = vec![song.clone()];
+                    queue = vec![song];
+                    added = 0;
+                    jump = Some(0);
+                } else {
+                    let at = (index + 1 + added).min(queue.len());
+                    queue.insert(at, song.clone());
+                    match shuffled {
+                        true => original.push(song),
+                        false => original = queue.clone(),
+                    }
+                    added += 1;
+                    if let Some(playing) = current.as_mut() {
+                        playing.preload = None;
+                    }
+                    say(Update::Queue(queue.clone(), index));
+                }
+            }
+            Some(Command::Remove(at)) => {
+                if at < queue.len() && at != index {
+                    let song = queue.remove(at);
+                    if at < index {
+                        index -= 1;
+                    } else if at <= index + added {
+                        added = added.saturating_sub(1);
+                    }
+                    if let Some(place) = original.iter().position(|it| it.id == song.id) {
+                        original.remove(place);
+                    }
+                    if let Some(playing) = current.as_mut() {
+                        playing.preload = None;
+                    }
+                    say(Update::Queue(queue.clone(), index));
+                }
+            }
             Some(Command::Client(next)) => api = next,
             Some(Command::Repeat(mode)) => repeat = mode,
             Some(Command::Shuffle(on)) if on != shuffled => {
@@ -259,6 +326,12 @@ fn run(
                 say(Update::Stopped);
                 continue;
             };
+            // Moving on to the next song plays the first one added; a jump elsewhere leaves the
+            // added songs where they are.
+            added = match at == index + 1 {
+                true => added.saturating_sub(1),
+                false => 0,
+            };
             index = at;
             say(Update::Queue(queue.clone(), index));
             current = begin(&output, &api, &song, &say);
@@ -273,6 +346,7 @@ fn run(
             {
                 Some((next, song)) => {
                     index = next;
+                    added = added.saturating_sub(1);
                     say(Update::Queue(queue.clone(), index));
                     current = begin(&output, &api, &song, &say);
                 }
@@ -290,6 +364,7 @@ fn run(
             && playing.sink.len() <= 1
         {
             index = next;
+            added = added.saturating_sub(1);
             playing.queued = None;
             playing.duration = duration;
             playing.offset = playing.sink.get_pos();
@@ -388,6 +463,16 @@ pub fn shuffle(songs: &mut [Song]) {
 
 /// How far into the current song. rodio's position may or may not restart when a queued
 /// source takes over; the offset taken at the switch covers both.
+/// Where the song at `index` ends up when the one at `from` moves to `to`.
+fn moved(index: usize, from: usize, to: usize) -> usize {
+    match index {
+        _ if index == from => to,
+        _ if from < index && index <= to => index - 1,
+        _ if to <= index && index < from => index + 1,
+        _ => index,
+    }
+}
+
 fn elapsed(playing: &Playing) -> Duration {
     let raw = playing.sink.get_pos();
     match raw >= playing.offset {
@@ -485,4 +570,22 @@ fn start(output: &rodio::OutputStream, loaded: Loaded) -> Result<Playing> {
         offset: Duration::ZERO,
         _streams: vec![loaded.stream],
     })
+}
+
+#[cfg(test)]
+mod moving {
+    use super::moved;
+
+    /// The song playing stays the one playing, wherever the moved song lands.
+    #[test]
+    fn the_song_playing_keeps_its_place() {
+        // Playing the third song (2); one after it moves before it.
+        assert_eq!(moved(2, 4, 0), 3);
+        // One before it moves after it.
+        assert_eq!(moved(2, 0, 4), 1);
+        // Two songs after it swap.
+        assert_eq!(moved(2, 5, 3), 2);
+        // The song playing itself moves.
+        assert_eq!(moved(2, 2, 6), 6);
+    }
 }

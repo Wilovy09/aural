@@ -56,13 +56,37 @@ pub enum ToController {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "do", rename_all = "snake_case")]
 pub enum Remote {
-    Play { queue: Vec<Song>, index: usize },
+    Play {
+        queue: Vec<Song>,
+        index: usize,
+    },
     Toggle,
     Next,
     Previous,
-    Seek { millis: u64 },
-    Shuffle { on: bool },
-    Repeat { mode: Repeat },
+    Seek {
+        millis: u64,
+    },
+    Shuffle {
+        on: bool,
+    },
+    Repeat {
+        mode: Repeat,
+    },
+    /// Night mode on the host's screen: black, with the song's name.
+    Night,
+    /// Move a song of the queue.
+    Move {
+        from: usize,
+        to: usize,
+    },
+    /// Add a song to the queue.
+    Enqueue {
+        song: Song,
+    },
+    /// Take the song at this place out of the queue.
+    Remove {
+        at: usize,
+    },
 }
 
 /// What plays on the host.
