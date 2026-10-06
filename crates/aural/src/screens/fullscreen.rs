@@ -72,7 +72,8 @@ impl Component for Fullscreen {
             (false, false) => (height * 0.44).min(width * 0.34).min(520.),
         };
         let tab_ring = (focus.full_row == 0).then_some(focus.full_tab);
-        let ring = |at: usize| focus.full_row == 1 && focus.full_button == at;
+        // The transport's two rows share one button index.
+        let ring = |at: usize| matches!(focus.full_row, 1 | 3) && focus.full_button == at;
         let press = |at: usize| ui::tap(Target::Transport(at));
         let tabs = ui::tabs(
             &[
@@ -122,14 +123,15 @@ impl Component for Fullscreen {
                     ring(4),
                 )
                 .on_press(press(4)),
-            )
-            .child(
-                rect()
-                    .width(Size::px(1.))
-                    .height(Size::px(metrics::CONTROL))
-                    .margin((0., 4.))
-                    .background(color::GLASS_EDGE),
-            )
+            );
+        // The modes under the transport: clear, night, translate, like.
+        let modes = rect()
+            .direction(Direction::Horizontal)
+            .cross_align(Alignment::Center)
+            .spacing(match split {
+                true => 10.,
+                false => 18.,
+            })
             .child(ui::toggle(Icon::Clear, false, ring(5)).on_press(press(5)))
             .child(ui::toggle(Icon::Night, false, ring(6)).on_press(press(6)))
             .child(ui::toggle(Icon::Translate, translating, ring(7)).on_press(press(7)))
@@ -177,7 +179,7 @@ impl Component for Fullscreen {
                 tabs,
                 progress,
                 now: now_state.clone(),
-                button: (focus.full_row == 1).then_some(focus.full_button),
+                button: matches!(focus.full_row, 1 | 3).then_some(focus.full_button),
                 translating,
                 liked,
             })
@@ -223,10 +225,12 @@ impl Component for Fullscreen {
                             .width(Size::px((side * 1.5).min(420.)))
                             .child(progress),
                     )
-                    .child(transport)
                     .child(
-                        ui::line("Atrás para cerrar", text::TINY, color::ON_BACKDROP)
-                            .on_press(ui::tap(Target::Back)),
+                        rect()
+                            .cross_align(Alignment::Center)
+                            .spacing(6.)
+                            .child(transport)
+                            .child(modes),
                     )
             });
 

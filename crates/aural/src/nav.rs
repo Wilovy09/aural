@@ -75,6 +75,11 @@ impl Press {
     }
 }
 
+/// The last button of the fullscreen transport's first row (repeat), and the first of its
+/// second row (clear).
+const LAST_PLAY: usize = 4;
+const FIRST_MODE: usize = 5;
+
 /// How far left and right on the progress move, in seconds.
 const SEEK_STEP: i64 = 10;
 
@@ -229,10 +234,25 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
         }
         (2, Press::Down) => focus.full_row = 1,
         (2, Press::Ok) => {}
-        // The transport: shuffle, previous, play, next, repeat.
-        (_, Press::Left) => focus.full_button = focus.full_button.saturating_sub(1),
+        // The transport (row 1): shuffle, previous, play, next, repeat. Under it the modes
+        // (row 3): clear, night, translate, like. Up and down keep to the same side.
+        (1, Press::Left) => focus.full_button = focus.full_button.min(LAST_PLAY).saturating_sub(1),
+        (1, Press::Right) => focus.full_button = (focus.full_button + 1).min(LAST_PLAY),
+        (1, Press::Up) => focus.full_row = 2,
+        (1, Press::Down) => {
+            focus.full_row = 3;
+            let share = focus.full_button.min(LAST_PLAY) as f32 / LAST_PLAY as f32;
+            let modes = (TRANSPORT_BUTTONS - 1 - FIRST_MODE) as f32;
+            focus.full_button = FIRST_MODE + (share * modes).round() as usize;
+        }
+        (_, Press::Left) => focus.full_button = focus.full_button.saturating_sub(1).max(FIRST_MODE),
         (_, Press::Right) => focus.full_button = (focus.full_button + 1).min(TRANSPORT_BUTTONS - 1),
-        (_, Press::Up) => focus.full_row = 2,
+        (_, Press::Up) => {
+            focus.full_row = 1;
+            let modes = (TRANSPORT_BUTTONS - 1 - FIRST_MODE) as f32;
+            let share = focus.full_button.saturating_sub(FIRST_MODE) as f32 / modes;
+            focus.full_button = (share * LAST_PLAY as f32).round() as usize;
+        }
         (_, Press::Down) => state.fullscreen = false,
         (_, Press::Ok) => {
             return match focus.full_button {
