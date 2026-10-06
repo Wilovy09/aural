@@ -105,6 +105,7 @@ impl Component for Search {
         let found = search.read().search.results.clone();
         let filter = search.read().search.filter;
         let playing = now.read().now.song.as_ref().map(|song| song.id.clone());
+        let light = now.read().now.light.unwrap_or(color::FOCUS_ON_PRIMARY);
         let columns = ui::columns();
 
         let shelves: Vec<usize> = match found.ready() {
@@ -249,6 +250,7 @@ impl Component for Search {
                             playing: playing.as_deref(),
                             columns,
                             compact,
+                            light,
                         };
                         match filter {
                             Filter::All => page.children(view.everything(&shelves)),
@@ -313,6 +315,8 @@ struct View<'a> {
     playing: Option<&'a str>,
     columns: usize,
     compact: bool,
+    /// The light of the song playing, the swipe's colour.
+    light: Color,
 }
 
 impl View<'_> {
@@ -494,8 +498,7 @@ impl View<'_> {
             (true, None) => format!("Canción • {}", song.artist),
             (false, _) => song.artist.clone(),
         };
-        rect()
-            .key(row)
+        let line = rect()
             .width(Size::fill())
             .height(Size::px(ROW))
             .padding((0., 10.))
@@ -504,11 +507,10 @@ impl View<'_> {
             .cross_align(Alignment::Center)
             .spacing(14.)
             .corner_radius(metrics::RADIUS)
-            .background(match focused {
+            .background(match ui::ring(focused) {
                 true => color::FOCUS_FILL,
                 false => Color::TRANSPARENT,
             })
-            .border(ui::focus_border(focused))
             .on_press(ui::tap(Target::Content(Spot::Cell(0, row))))
             .child(
                 Cover::new(song.cover.clone(), THUMB, 4.)
@@ -538,7 +540,20 @@ impl View<'_> {
                 song.duration.map(library::clock).unwrap_or_default(),
                 text::LABEL,
                 color::MUTED_FOREGROUND,
-            ))
+            ));
+        // Swiped to the left, the song joins the queue.
+        let queued = song.clone();
+        ui::swipe::Swipe {
+            content: line.into_element(),
+            glyph: Icon::Queue,
+            label: "Agregar a la cola",
+            tint: self.light,
+            surface: color::BACKGROUND,
+            height: ROW,
+            on_swipe: EventHandler::new(move |_| crate::app::enqueue(queued.clone())),
+            key: DiffKey::default(),
+        }
+        .key(row)
     }
 }
 

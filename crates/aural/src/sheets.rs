@@ -35,6 +35,7 @@ pub fn look_up(mut station: RadioStation<AppState, Channel>, song: Song) {
         .and_then(|found| found.get(&song.id).cloned())
     {
         station.write_channel(Channel::Lyrics).sheet = sheet(&song, known);
+        translate(station);
         return;
     }
     station.write_channel(Channel::Lyrics).sheet = Sheet {
@@ -42,23 +43,10 @@ pub fn look_up(mut station: RadioStation<AppState, Channel>, song: Song) {
         lyrics: Load::Loading,
         source: None,
         writers: Vec::new(),
+        translation: Load::Idle,
     };
 
-    let query = lyrics::LyricsQuery {
-        title: song.title.clone(),
-        artist: song
-            .artist
-            .split(", ")
-            .next()
-            .unwrap_or_default()
-            .to_owned(),
-        album: song.album.clone(),
-        duration: song.duration.unwrap_or_default(),
-        track: Some(lyrics::TrackKey {
-            provider: "youtube",
-            id: song.id.clone(),
-        }),
-    };
+    let query = query(&song);
     let (sender, mut batches) = tokio::sync::mpsc::unbounded_channel();
     // Until Apple Music answers, no other provider's sheet shows, so Apple's does not replace
     // a fallback a moment later. If it takes longer than `APPLE_WAIT`, this stands in for its
@@ -91,6 +79,7 @@ pub fn look_up(mut station: RadioStation<AppState, Channel>, song: Song) {
                     .is_some_and(|(_, source, _)| *source == lyrics::APPLE);
             if settled && let Some(best) = best.clone() {
                 station.write_channel(Channel::Lyrics).sheet = sheet(&song, Some(best));
+                translate(station);
             }
         }
         if let Some((lyrics, source, _)) = &best {
@@ -121,12 +110,96 @@ fn sheet(song: &Song, best: Option<(lyrics::Lyrics, &'static str, Vec<String>)>)
             lyrics: Load::Ready(lyrics),
             source: Some(source),
             writers,
+            translation: Load::Idle,
         },
         None => Sheet {
             song: Some(song.id.clone()),
             lyrics: Load::Failed("Esta canción no tiene letra".into()),
             source: None,
             writers: Vec::new(),
+            translation: Load::Idle,
         },
     }
+}
+
+/// What the providers search by for `song`.
+fn query(song: &Song) -> lyrics::LyricsQuery {
+    lyrics::LyricsQuery {
+        title: song.title.clone(),
+        artist: song
+            .artist
+            .split(", ")
+            .next()
+            .unwrap_or_default()
+            .to_owned(),
+        album: song.album.clone(),
+        duration: song.duration.unwrap_or_default(),
+        track: Some(lyrics::TrackKey {
+            provider: "youtube",
+            id: song.id.clone(),
+        }),
+    }
+}
+
+/// The translation found per song and sheet source, `None` when there is none.
+type Translations = HashMap<(String, &'static str), Option<lyrics::Translation>>;
+
+fn translations() -> &'static Mutex<Translations> {
+    static FOUND: OnceLock<Mutex<Translations>> = OnceLock::new();
+    FOUND.get_or_init(Mutex::default)
+}
+
+/// Looks up the translation of the sheet on screen, while translating is on and it is not
+/// known yet. Kept per song and source, so a sheet translated once is not asked for again.
+pub fn translate(mut station: RadioStation<AppState, Channel>) {
+    let state = station.peek();
+    if !state.translate || state.sheet.translation != Load::Idle {
+        return;
+    }
+    let (Some(id), Some(source), Load::Ready(lyrics::Lyrics::Synced { lines })) = (
+        state.sheet.song.clone(),
+        state.sheet.source,
+        &state.sheet.lyrics,
+    ) else {
+        return;
+    };
+    let lines = lines.clone();
+    let Some(song) = state.now.song.clone().filter(|song| song.id == id) else {
+        return;
+    };
+    drop(state);
+    let key = (id.clone(), source);
+    if let Some(known) = translations()
+        .lock()
+        .ok()
+        .and_then(|found| found.get(&key).cloned())
+    {
+        station.write_channel(Channel::Lyrics).sheet.translation = Load::Ready(known);
+        return;
+    }
+    station.write_channel(Channel::Lyrics).sheet.translation = Load::Loading;
+    let query = query(&song);
+    spawn(async move {
+        let found = runtime::spawn(async move { lyrics::translate(&query, &lines).await })
+            .await
+            .ok()
+            .flatten();
+        if let Some(found) = &found {
+            log::info!(
+                "lyrics: translation of {id} from {} (machine {})",
+                found.source,
+                found.machine
+            );
+        }
+        if let Ok(mut known) = translations().lock() {
+            known.insert(key, found.clone());
+        }
+        let same = {
+            let sheet = &station.peek().sheet;
+            sheet.song.as_deref() == Some(id.as_str()) && sheet.source == Some(source)
+        };
+        if same {
+            station.write_channel(Channel::Lyrics).sheet.translation = Load::Ready(found);
+        }
+    });
 }

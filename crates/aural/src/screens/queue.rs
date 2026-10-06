@@ -6,10 +6,10 @@ use freya::radio::use_radio;
 
 use crate::library::{self, Song};
 use crate::state::{AppState, Channel};
-use crate::ui::{self, Cover, color, metrics, text};
+use crate::ui::{self, Cover, Icon, color, metrics, text};
 
-/// Height of one queue row.
-const ROW: f32 = 56.;
+/// Height of one queue row, with the line that marks a drop above it.
+const ROW: f32 = 58.;
 /// Side of a row's cover.
 const THUMB: f32 = 40.;
 
@@ -28,6 +28,8 @@ impl Component for QueuePanel {
             .skip(state.now.index + 1)
             .cloned()
             .collect();
+        // Where the first song coming up sits in the queue.
+        let first = state.now.index + 1;
         drop(state);
         let count = upcoming.len();
 
@@ -52,8 +54,13 @@ impl Component for QueuePanel {
                 ))
             })
             .child(
-                VirtualScrollView::new_with_data(upcoming, |index, upcoming| {
-                    row(index + 1, &upcoming[index], false).into_element()
+                // Each song coming up can be dragged onto another to take its place.
+                VirtualScrollView::new_with_data((upcoming, first), |index, (upcoming, first)| {
+                    Movable {
+                        at: first + index,
+                        song: upcoming[index].clone(),
+                    }
+                    .into_element()
                 })
                 .length(count)
                 .item_size(ROW)
@@ -61,6 +68,82 @@ impl Component for QueuePanel {
                 .width(Size::fill())
                 .height(Size::flex(1.)),
             )
+    }
+}
+
+/// A song coming up: swiped to the left it leaves the queue; dragged by its grip it moves,
+/// dropped onto another song's place, which a line marks while it is dragged over.
+#[derive(PartialEq)]
+struct Movable {
+    /// Its place in the queue.
+    at: usize,
+    song: Song,
+}
+
+impl Component for Movable {
+    fn render(&self) -> impl IntoElement {
+        let mut over = use_state(|| false);
+        let at = self.at;
+        // The copy that follows the pointer: the row, lifted.
+        let lifted = rect()
+            .width(Size::px(360.))
+            .corner_radius(metrics::RADIUS)
+            .background(color::RAISED)
+            .shadow((0., 10., 30., 0., Color::from_argb(0x66, 0, 0, 0)))
+            .child(row(at, &self.song, false));
+        let grip = DragZone::new(
+            at,
+            rect()
+                .width(Size::px(36.))
+                .height(Size::px(ROW - 2.))
+                .center()
+                .child(ui::icon(Icon::Grip, 18., color::ON_BACKDROP))
+                .into_element(),
+        )
+        .drag_element(lifted);
+        let line = rect()
+            .width(Size::fill())
+            .direction(Direction::Horizontal)
+            .content(Content::Flex)
+            .cross_align(Alignment::Center)
+            .child(
+                rect()
+                    .width(Size::flex(1.))
+                    .child(row(at, &self.song, false)),
+            )
+            // The grip keeps its press: dragging it moves the song, it is not a swipe.
+            .child(
+                rect()
+                    .on_pointer_down(|event: Event<PointerEventData>| event.stop_propagation())
+                    .child(grip),
+            );
+        DropZone::new(
+            rect()
+                .width(Size::fill())
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::px(2.))
+                        .corner_radius(1.)
+                        .background(match *over.read() {
+                            true => color::FOREGROUND,
+                            false => Color::TRANSPARENT,
+                        }),
+                )
+                .child(ui::swipe::Swipe {
+                    content: line.into_element(),
+                    glyph: Icon::Close,
+                    label: "Quitar de la cola",
+                    tint: color::DANGER,
+                    surface: color::BACKDROP_ROW,
+                    height: ROW - 2.,
+                    on_swipe: EventHandler::new(move |_| crate::app::remove_from_queue(at)),
+                    key: DiffKey::default(),
+                }),
+            move |from: usize| crate::app::move_in_queue(from, at),
+        )
+        .on_drag_over(move |inside: bool| over.set(inside))
+        .key(at)
     }
 }
 

@@ -7,7 +7,7 @@ use freya::radio::use_radio;
 
 use crate::library::{self, Song};
 use crate::nav::Target;
-use crate::state::{AppState, Channel, Zone};
+use crate::state::{AppState, Channel, PLAYER_LIKE, Zone};
 use crate::ui::{self, Cover, Icon, Variant, color, metrics, text};
 
 #[derive(PartialEq)]
@@ -17,6 +17,7 @@ impl Component for PlayerBar {
     fn render(&self) -> impl IntoElement {
         let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
         let now = use_radio::<AppState, Channel>(Channel::Now);
+        let library = use_radio::<AppState, Channel>(Channel::Library);
         let focus = navigation.read().focus;
         let ring = |button: usize| focus.zone == Zone::Player && focus.player == button;
         let press = |button: usize| ui::tap(Target::Player(button));
@@ -24,6 +25,10 @@ impl Component for PlayerBar {
         let song = state.now.song.clone();
         let playing = state.now.playing;
         let loading = state.now.loading;
+        let light = state.now.light.unwrap_or(color::FOREGROUND);
+        let liked = song
+            .as_ref()
+            .is_some_and(|song| library.read().liked(&song.id));
         let island = match state.now.light {
             Some(light) => ui::tint::mix(color::SECONDARY, light, 0.10),
             None => color::SECONDARY,
@@ -44,8 +49,22 @@ impl Component for PlayerBar {
                 .child(
                     rect()
                         .width(Size::flex(1.))
-                        .on_press(press(4))
-                        .child(now_playing(song)),
+                        .direction(Direction::Horizontal)
+                        .cross_align(Alignment::Center)
+                        .spacing(10.)
+                        .maybe(song.is_some(), |left| {
+                            left.child(
+                                rect()
+                                    .width(Size::px(metrics::CONTROL))
+                                    .height(Size::px(metrics::CONTROL))
+                                    .center()
+                                    .corner_radius(metrics::CONTROL / 2.)
+                                    .border(ui::focus_border(ring(PLAYER_LIKE)))
+                                    .on_press(press(PLAYER_LIKE))
+                                    .child(ui::heart(liked, 18., light, color::MUTED_FOREGROUND)),
+                            )
+                        })
+                        .child(rect().on_press(press(4)).child(now_playing(song))),
                 )
                 .child(
                     rect()
@@ -114,6 +133,7 @@ impl Component for MiniPlayer {
         let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
         let now = use_radio::<AppState, Channel>(Channel::Now);
         let connect = use_radio::<AppState, Channel>(Channel::Connect);
+        let library = use_radio::<AppState, Channel>(Channel::Library);
         let remote = connect.read().connect.remote().map(str::to_owned);
         let remote_on = remote.is_some();
         let focus = navigation.read().focus;
@@ -123,7 +143,9 @@ impl Component for MiniPlayer {
             return rect().into_element();
         };
         let playing = state.now.playing;
+        let light = state.now.light.unwrap_or(color::FOREGROUND);
         drop(state);
+        let liked = library.read().liked(&song.id);
 
         rect()
             .width(Size::fill())
@@ -167,6 +189,16 @@ impl Component for MiniPlayer {
                                 )
                                 .width(Size::fill()),
                             ),
+                    )
+                    .child(
+                        rect()
+                            .width(Size::px(44.))
+                            .height(Size::px(48.))
+                            .center()
+                            .corner_radius(22.)
+                            .border(ui::focus_border(ring(PLAYER_LIKE)))
+                            .on_press(ui::tap(Target::Player(PLAYER_LIKE)))
+                            .child(ui::heart(liked, 22., light, color::MUTED_FOREGROUND)),
                     )
                     .child(
                         rect()

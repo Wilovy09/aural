@@ -354,6 +354,8 @@ struct TrackRow {
 impl Component for TrackRow {
     fn render(&self) -> impl IntoElement {
         let now = use_radio::<AppState, Channel>(Channel::Now);
+        let library = use_radio::<AppState, Channel>(Channel::Library);
+        let liked = library.read().liked(&self.song.id);
         let light = now.read().now.light.unwrap_or(color::LIGHT);
         let now_playing = now.read().now.playing;
         let mut hovered = use_state(|| false);
@@ -402,7 +404,7 @@ impl Component for TrackRow {
                 )
         };
 
-        rect()
+        let row = rect()
             .height(Size::px(row_height()))
             .width(Size::fill())
             .direction(Direction::Horizontal)
@@ -472,6 +474,21 @@ impl Component for TrackRow {
                         ),
                 )
             })
+            // The like: always on a liked song, under the pointer on the rest.
+            .child({
+                let song = song.clone();
+                rect()
+                    .width(Size::px(36.))
+                    .height(Size::px(36.))
+                    .center()
+                    .on_press(move |event: Event<PressEventData>| {
+                        event.stop_propagation();
+                        crate::app::like(song.clone());
+                    })
+                    .maybe(liked || hover, |slot| {
+                        slot.child(ui::heart(liked, 16., light, color::MUTED_FOREGROUND))
+                    })
+            })
             .child(
                 rect()
                     .width(Size::px(84.))
@@ -479,6 +496,18 @@ impl Component for TrackRow {
                     .direction(Direction::Horizontal)
                     .main_align(Alignment::End)
                     .child(duration),
-            )
+            );
+        // Swiped to the left, the song joins the queue.
+        let queued = self.song.clone();
+        ui::swipe::Swipe {
+            content: row.into_element(),
+            glyph: Icon::Queue,
+            label: "Agregar a la cola",
+            tint: light,
+            surface: color::BACKGROUND,
+            height: row_height(),
+            on_swipe: EventHandler::new(move |_| crate::app::enqueue(queued.clone())),
+            key: DiffKey::default(),
+        }
     }
 }

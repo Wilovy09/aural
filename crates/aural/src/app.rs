@@ -92,6 +92,9 @@ fn player(station: Station, engine: &Engine, command: Command) {
         },
         Command::Shuffle(on) => crate::connect::Remote::Shuffle { on },
         Command::Repeat(mode) => crate::connect::Remote::Repeat { mode },
+        Command::Move { from, to } => crate::connect::Remote::Move { from, to },
+        Command::Enqueue(song) => crate::connect::Remote::Enqueue { song },
+        Command::Remove(at) => crate::connect::Remote::Remove { at },
         Command::Client(_) => return engine.send(command),
     };
     crate::connect::command(remote);
@@ -209,6 +212,12 @@ fn follow(mut station: Station, engine: &Engine, event: crate::connect::Event) {
                 crate::connect::modes(on, state.now.repeat);
                 engine.send(Command::Shuffle(on));
             }
+            // The controller turned night mode on: it is this screen that goes dark.
+            crate::connect::Remote::Night => {
+                let mut state = station.write_channel(Channel::Navigation);
+                state.fullscreen = true;
+                state.mode = crate::state::Mode::Night;
+            }
             crate::connect::Remote::Repeat { mode } => {
                 let mut state = station.write_channel(Channel::Now);
                 state.now.repeat = mode;
@@ -235,10 +244,13 @@ pub fn app() -> impl IntoElement {
     let station = use_init_radio_station::<AppState, Channel>(|| {
         let settings = crate::settings::load();
         ui::set_text_scale(settings.text.text());
+        // The app speaks Spanish, so lyrics are translated into Spanish.
+        lyrics::set_language("es");
         AppState {
             motion: settings.motion,
             text: settings.text,
             interface: settings.interface,
+            translate: settings.translate,
             ..AppState::default()
         }
     });
@@ -597,6 +609,35 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             state.text = scale;
             save_settings(&state);
         }
+        Action::ToggleLike(song) => {
+            let song = song.or_else(|| station.peek().now.song.clone());
+            if let Some(song) = song {
+                toggle_like(station, song);
+            }
+        }
+        Action::Night => {
+            let mut station = station;
+            let remote = station.peek().connect.remote().is_some();
+            match remote {
+                // Playing on another device: its screen goes dark, this one stays usable.
+                true => crate::connect::command(crate::connect::Remote::Night),
+                false => {
+                    station.write_channel(Channel::Navigation).mode = crate::state::Mode::Night
+                }
+            }
+        }
+        Action::ToggleTranslate => {
+            let mut station = station;
+            let on = {
+                let mut state = station.write_channel(Channel::Navigation);
+                state.translate = !state.translate;
+                save_settings(&state);
+                state.translate
+            };
+            if on {
+                crate::sheets::translate(station);
+            }
+        }
         Action::SetInterface(scale) => {
             let mut station = station;
             crate::settings::apply_interface(scale);
@@ -607,11 +648,89 @@ fn perform(station: Station, engine: &Engine, action: Action) {
     }
 }
 
+/// Likes `song` or takes the like back: shown at once, then sent to YouTube Music, and undone
+/// if YouTube refuses.
+pub fn toggle_like(mut station: Station, song: library::Song) {
+    let liked = station.peek().liked(&song.id);
+    let id = song.id.clone();
+    let flip = move |station: &mut Station, like: bool| {
+        let mut state = station.write_channel(Channel::Library);
+        if let Load::Ready(library) = &mut state.library {
+            library.liked.retain(|it| it.id != song.id);
+            if like {
+                library.liked.insert(0, song.clone());
+            }
+        }
+    };
+    flip(&mut station, !liked);
+    spawn_forever(async move {
+        let api = client();
+        let sent = runtime::spawn(async move { api.rate_track(&id, !liked).await }).await;
+        if let Ok(Err(error)) | Err(error) = sent.map_err(anyhow::Error::from) {
+            log::warn!("library: cannot change the like: {error:#}");
+            flip(&mut station, liked);
+        }
+    });
+}
+
+/// Moves the song at `from` in the queue to `to`, on the player that plays. The queue shown
+/// moves at once; the engine's answer confirms it.
+pub fn move_in_queue(from: usize, to: usize) {
+    let Some((mut station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    {
+        let mut state = station.write_channel(Channel::Now);
+        let now = &mut state.now;
+        if from >= now.queue.len() || to >= now.queue.len() || from == to {
+            return;
+        }
+        let song = now.queue.remove(from);
+        now.queue.insert(to, song);
+    }
+    player(station, &engine, Command::Move { from, to });
+}
+
+/// Adds `song` to the queue of the player that plays.
+pub fn enqueue(song: library::Song) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    player(station, &engine, Command::Enqueue(song));
+}
+
+/// Takes the song at `at` out of the queue of the player that plays.
+pub fn remove_from_queue(at: usize) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    player(station, &engine, Command::Remove(at));
+}
+
+/// Likes or unlikes the song playing, from a tap on a heart.
+pub fn like_now() {
+    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    if let Some(song) = station.peek().now.song.clone() {
+        toggle_like(station, song);
+    }
+}
+
+/// Likes or unlikes `song`, from a tap on a row's heart.
+pub fn like(song: library::Song) {
+    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    toggle_like(station, song);
+}
+
 fn save_settings(state: &AppState) {
     crate::settings::save(crate::settings::Settings {
         motion: state.motion,
         text: state.text,
         interface: state.interface,
+        translate: state.translate,
     });
 }
 

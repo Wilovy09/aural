@@ -26,8 +26,12 @@ impl Component for Fullscreen {
         let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
         let now = use_radio::<AppState, Channel>(Channel::Now);
         let motion_on = navigation.read().motion;
+        let library = use_radio::<AppState, Channel>(Channel::Library);
         let now_state = now.read().now.clone();
         let song = now_state.song.clone();
+        let liked = song
+            .as_ref()
+            .is_some_and(|song| library.read().liked(&song.id));
         let night_title = song.as_ref().map(|song| song.title.clone());
 
         let mut frame = use_state(|| None::<Arc<motion::Frame>>);
@@ -51,6 +55,7 @@ impl Component for Fullscreen {
         let navigation_state = navigation.read();
         let view = navigation_state.view;
         let mode = navigation_state.mode;
+        let translating = navigation_state.translate;
         let controls = mode == Mode::Normal;
         let focus = navigation_state.focus;
         drop(navigation_state);
@@ -126,7 +131,19 @@ impl Component for Fullscreen {
                     .background(color::GLASS_EDGE),
             )
             .child(ui::toggle(Icon::Clear, false, ring(5)).on_press(press(5)))
-            .child(ui::toggle(Icon::Night, false, ring(6)).on_press(press(6)));
+            .child(ui::toggle(Icon::Night, false, ring(6)).on_press(press(6)))
+            .child(ui::toggle(Icon::Translate, translating, ring(7)).on_press(press(7)))
+            .child(
+                ui::toggle(
+                    match liked {
+                        true => Icon::HeartFilled,
+                        false => Icon::Heart,
+                    },
+                    liked,
+                    ring(8),
+                )
+                .on_press(press(8)),
+            );
         let progress = Progress {
             loading: now_state.loading,
             focused: focus.full_row == 2,
@@ -161,6 +178,8 @@ impl Component for Fullscreen {
                 progress,
                 now: now_state.clone(),
                 button: (focus.full_row == 1).then_some(focus.full_button),
+                translating,
+                liked,
             })
             .into_element();
         }
@@ -271,6 +290,10 @@ struct Phone {
     now: crate::state::Now,
     /// The transport button the D-pad is on, if it is on the transport.
     button: Option<usize>,
+    /// Whether the lyrics show their translation.
+    translating: bool,
+    /// Whether the account likes the song.
+    liked: bool,
 }
 
 /// The fullscreen player on a phone, after YouTube Music's and Apple Music's: close on the
@@ -287,6 +310,8 @@ fn phone(parts: Phone) -> impl IntoElement {
         progress,
         now,
         button,
+        translating,
+        liked,
     } = parts;
     let (top, bottom) = ui::safe();
     let (title, artist) = song
@@ -297,14 +322,34 @@ fn phone(parts: Phone) -> impl IntoElement {
     let names = |size: f32| {
         rect()
             .width(Size::fill())
-            .spacing(4.)
+            .direction(Direction::Horizontal)
+            .content(Content::Flex)
+            .cross_align(Alignment::Center)
+            .spacing(12.)
             .child(
-                ui::line(title.clone(), size, color::FOREGROUND)
-                    .font_weight(FontWeight::BOLD)
-                    .width(Size::fill()),
+                rect()
+                    .width(Size::flex(1.))
+                    .spacing(4.)
+                    .child(
+                        ui::line(title.clone(), size, color::FOREGROUND)
+                            .font_weight(FontWeight::BOLD)
+                            .width(Size::fill()),
+                    )
+                    .child(
+                        ui::line(artist.clone(), text::BODY + 1., color::ON_BACKDROP)
+                            .width(Size::fill()),
+                    ),
             )
+            // Like it, YouTube Music's heart beside the song.
             .child(
-                ui::line(artist.clone(), text::BODY + 1., color::ON_BACKDROP).width(Size::fill()),
+                rect()
+                    .width(Size::px(44.))
+                    .height(Size::px(44.))
+                    .center()
+                    .corner_radius(22.)
+                    .border(ui::focus_border(ring(8)))
+                    .on_press(press(8))
+                    .child(ui::heart(liked, 26., color::FOREGROUND, color::ON_BACKDROP)),
             )
     };
     // A round glass button for the top bar.
@@ -452,7 +497,15 @@ fn phone(parts: Phone) -> impl IntoElement {
                             .child(rect().width(Size::flex(1.)))
                             .child(glass(Icon::Cast, Target::Devices, false))
                             .child(glass(Icon::Clear, Target::Transport(5), ring(5)))
-                            .child(glass(Icon::Night, Target::Transport(6), ring(6))),
+                            .child(glass(Icon::Night, Target::Transport(6), ring(6)))
+                            .child(
+                                glass(Icon::Translate, Target::Transport(7), ring(7)).background(
+                                    match translating {
+                                        true => color::GLASS_SELECTED,
+                                        false => color::GLASS,
+                                    },
+                                ),
+                            ),
                     )
                 })
                 .child(body)

@@ -13,6 +13,8 @@ pub struct Settings {
     pub text: Scale,
     /// How large the whole interface is, as a step of [`Scale`].
     pub interface: Scale,
+    /// Show the lyrics' translation under each line.
+    pub translate: bool,
 }
 
 /// A size step, for text or the whole interface.

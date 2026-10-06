@@ -256,6 +256,12 @@ pub fn command(remote: &Remote) -> Option<crate::engine::Command> {
         Remote::Next => Command::Next,
         Remote::Previous => Command::Previous,
         Remote::Seek { millis } => Command::Seek(Duration::from_millis(*millis)),
-        Remote::Shuffle { .. } | Remote::Repeat { .. } => return None,
+        Remote::Move { from, to } => Command::Move {
+            from: *from,
+            to: *to,
+        },
+        Remote::Enqueue { song } => Command::Enqueue(song.clone()),
+        Remote::Remove { at } => Command::Remove(*at),
+        Remote::Shuffle { .. } | Remote::Repeat { .. } | Remote::Night => return None,
     })
 }

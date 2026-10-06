@@ -6,7 +6,7 @@ use freya::prelude::{Key, NamedKey};
 
 use crate::library::{Collection, Song};
 use crate::state::{
-    AppState, Filter, Mode, NAV, PLAYER_BUTTONS, Page, Spot, TRANSPORT_BUTTONS, View, Zone,
+    AppState, Filter, Mode, NAV, PLAYER_LIKE, Page, Spot, TRANSPORT_BUTTONS, View, Zone,
 };
 
 /// What a key press asks the app to do beyond moving the focus.
@@ -42,6 +42,12 @@ pub enum Action {
     SetText(crate::settings::Scale),
     /// The interface size setting.
     SetInterface(crate::settings::Scale),
+    /// Show or hide the lyrics' translation.
+    ToggleTranslate,
+    /// Night mode, on the screen that plays: this one, or the device this one controls.
+    Night,
+    /// Like the song, or take the like back: the one playing, or the one given.
+    ToggleLike(Option<Song>),
 }
 
 /// The arrow keys, OK and Back, whatever the device calls them.
@@ -239,10 +245,9 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
                     state.mode = Mode::Clear;
                     Action::None
                 }
-                _ => {
-                    state.mode = Mode::Night;
-                    Action::None
-                }
+                7 => Action::ToggleTranslate,
+                8 => Action::ToggleLike(None),
+                _ => Action::Night,
             };
         }
     }
@@ -367,8 +372,13 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
 fn player(state: &mut AppState, press: Press) -> Action {
     let at = &mut state.focus.player;
     match press {
+        // The like button sits left of the transport, before button 0.
+        Press::Left if *at == 0 => *at = PLAYER_LIKE,
+        Press::Left if *at == PLAYER_LIKE => {}
+        Press::Right if *at == PLAYER_LIKE => *at = 0,
         Press::Left => *at = at.saturating_sub(1),
-        Press::Right => *at = (*at + 1).min(PLAYER_BUTTONS - 1),
+        Press::Right => *at = (*at + 1).min(PLAYER_LIKE - 1),
+        Press::Ok if *at == PLAYER_LIKE => return Action::ToggleLike(None),
         Press::Up => enter_content(state),
         Press::Ok if *at == 3 => open_devices(state),
         Press::Ok if *at == 4 => {

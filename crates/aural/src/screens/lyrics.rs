@@ -48,6 +48,8 @@ impl Component for LyricsPanel {
         let sheet = use_radio::<AppState, Channel>(Channel::Lyrics);
         let position = use_radio::<AppState, Channel>(Channel::Position);
         let now = use_radio::<AppState, Channel>(Channel::Now);
+        let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
+        let translating = navigation.read().translate;
         let elapsed = position.read().position.elapsed;
         let playing = now.read().now.playing;
         let state = sheet.read().sheet.clone();
@@ -70,6 +72,24 @@ impl Component for LyricsPanel {
             Load::Ready(Lyrics::Synced { lines }) => Some(lines.clone()),
             _ => None,
         };
+        // Each line carries its translation while translating is on, and none otherwise (a
+        // sheet may come with its own).
+        let translation = match (&state.translation, translating) {
+            (Load::Ready(Some(found)), true) => Some(found.clone()),
+            _ => None,
+        };
+        let lines = lines.map(|lines| -> std::sync::Arc<[LyricsLine]> {
+            lines
+                .iter()
+                .enumerate()
+                .map(|(at, line)| LyricsLine {
+                    translation: translation
+                        .as_ref()
+                        .and_then(|found| found.lines.get(at).cloned().flatten()),
+                    ..line.clone()
+                })
+                .collect()
+        });
         let items = lines.as_deref().map(items).unwrap_or_default();
         let current = lines
             .as_deref()
@@ -126,7 +146,7 @@ impl Component for LyricsPanel {
                     .width(Size::fill())
                     .padding((view * PIN, 24., view * 0.7, 0.))
                     .child(body)
-                    .map(credits(&state), |page, credits| {
+                    .map(credits(&state, translation.as_ref()), |page, credits| {
                         page.child(rect().margin((size * 2., 0., 0., 0.)).spacing(4.).children(
                             credits.into_iter().map(|line| {
                                 label()
@@ -299,6 +319,18 @@ fn notes(
 fn extras(line: &LyricsLine, shade: f32) -> Vec<Element> {
     let side = align(line);
     let mut extra = Vec::new();
+    if let Some(translated) = &line.translation {
+        extra.push(
+            label()
+                .text(translated.clone())
+                .font_size(text::LARGE)
+                .font_weight(FontWeight::MEDIUM)
+                .color(dim(shade))
+                .text_align(side)
+                .width(Size::fill())
+                .into(),
+        );
+    }
     if let Some(romanized) = &line.romanized {
         extra.push(
             label()
@@ -411,11 +443,20 @@ fn note(message: impl Into<String>) -> impl IntoElement {
 }
 
 /// Sonora's footer under a sheet: where it came from and who wrote the song.
-fn credits(sheet: &crate::state::Sheet) -> Option<Vec<String>> {
+fn credits(
+    sheet: &crate::state::Sheet,
+    translation: Option<&lyrics::Translation>,
+) -> Option<Vec<String>> {
     let source = sheet.source?;
     let mut lines = vec![format!("Letra de {source}")];
     if !sheet.writers.is_empty() {
         lines.push(format!("Escrita por {}", sheet.writers.join(", ")));
+    }
+    if let Some(found) = translation {
+        lines.push(match found.machine {
+            true => format!("Traducción automática de {}", found.source),
+            false => format!("Traducción de {}", found.source),
+        });
     }
     Some(lines)
 }
