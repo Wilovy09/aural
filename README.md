@@ -29,12 +29,22 @@
 ## Features
 
 - **Your YouTube Music library**: liked songs, playlists and albums, after signing in with your Google account.
-- **Search** for songs, artists, albums and playlists, with a top result and filters.
+- **Home** with your YouTube Music feed: quick picks and shelves of albums, mixes and playlists.
+- **Search** for songs, artists, albums and playlists, with a top result and filters. On desktop it lives in the top bar (⌘K / Ctrl K).
 - **Artist pages** in YouTube Music's layout: a banner, monthly audience, top songs, albums, singles, playlists and related artists.
-- **Streaming playback** with gapless transitions, loudness normalization, shuffle and repeat.
+- **Streaming playback** with gapless transitions, loudness normalization, shuffle, repeat and seeking (drag the bar, or left and right on the remote).
 - **Synced lyrics**: word by word when available, with duets split by voice. Apple Music lyrics are used first, then LRCLIB, Musixmatch, NetEase, KuGou and YouTube.
+- **Likes**: like a song or take the like back from the player, the fullscreen player or a song's row, synced with your YouTube Music account.
+- **Queue you can shape**: drag a song by its grip to move it, swipe a song to the left to add it to the queue, and swipe a song in the queue to the left to take it out.
+- **Lyrics translation**: each line in Spanish under the original, from Apple Music or Musixmatch's human translations, or a machine translation when there is none.
+- **Apple Music covers** across the app, with YouTube's thumbnail as the fallback.
 - **Animated album covers** (opt-in), looked up from Apple Music and decoded on the device.
 - **Fullscreen player** with an animated backdrop made from the cover, a queue, and clear-screen and night modes.
+- **Cover light**: the cover of the song playing gently tints the app.
+- **Aural Connect**: play on another Aural on your Wi-Fi and control it from your phone or computer, like Spotify Connect. Paired once with a 4-digit code.
+- **Android media controls**: the player in quick settings and on the lock screen, and music that keeps playing in the background.
+- **Phone layout** with touch: bottom tabs, a mini player and a portrait fullscreen player.
+- **Settings**: your account photo, text size and interface size.
 - **Made for the TV remote**: everything works with the D-pad, OK and Back.
 
 ## Platforms
@@ -85,6 +95,7 @@ The APK is written to `build/aural.apk` and signed with your debug keystore. Ins
 | Arrows / D-pad | Move |
 | Enter / OK | Select |
 | Esc / Back | Go back |
+| ⌘K / Ctrl K | Search (desktop) |
 
 ## Project layout
 
@@ -93,7 +104,8 @@ crates/aural    the app: UI, navigation, playback engine, YouTube Music library
 crates/lyrics   lyrics search across providers, with word-level timing
 crates/motion   animated cover lookup and the Android hardware decoder
 crates/webview  native sign-in window for macOS, Windows and Linux
-android/        manifest, resources and the Java helpers (sign-in WebView, keep screen on)
+crates/aural/src/connect  Aural Connect: discovery, pairing and remote control
+android/        manifest, resources and the Java helpers (sign-in WebView, media session, keep screen on)
 scripts/        Android build and packaging
 assets/         fonts, icons and logos
 ```
@@ -109,7 +121,7 @@ Aural builds on the work of:
 - [Freya](https://github.com/marc2332/freya): UI framework
 - [Lucide](https://lucide.dev): icons
 
-Aural is not affiliated with YouTube, Google or Apple.
+Aural is not affiliated with YouTube, Google, Apple or Musixmatch.
 
 ## License
 
