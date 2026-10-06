@@ -31,7 +31,7 @@ pub fn just_swiped() -> bool {
     SWIPED.get().is_some_and(|at| at.elapsed() < AFTER)
 }
 
-fn mark() {
+pub(crate) fn mark() {
     SWIPED.set(Some(Instant::now()));
 }
 

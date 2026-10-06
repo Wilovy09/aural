@@ -7,6 +7,7 @@ pub mod form_input;
 pub mod spectrum;
 pub mod swipe;
 pub mod tint;
+pub mod touch_scroll;
 
 pub use cover::Cover;
 

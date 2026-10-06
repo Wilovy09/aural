@@ -198,67 +198,79 @@ impl Component for Search {
         let results = found.ready().cloned();
         let compact = ui::compact();
 
-        ScrollView::new_controlled(scroll)
-            .width(Size::fill())
-            .height(Size::fill())
-            .child(
-                rect()
-                    .width(Size::fill())
-                    .padding(ui::inset())
-                    .spacing(18.)
-                    // A computer types in the bar on top; here only on a TV or a phone.
-                    .maybe(!crate::chrome::top_bar::shown(), |page| {
-                        page.child(
-                            rect()
-                                .width(Size::fill())
-                                .height(Size::px(48.))
-                                .padding((0., 8., 0., 14.))
-                                .direction(Direction::Horizontal)
-                                .content(Content::Flex)
-                                .cross_align(Alignment::Center)
-                                .spacing(10.)
-                                .corner_radius(24.)
-                                .background(color::SECONDARY)
-                                .border(field_border)
-                                .on_press(ui::tap(Target::Content(Spot::Action(0))))
-                                .child(ui::icon(Icon::Search, 18., color::MUTED_FOREGROUND))
-                                .child(rect().width(Size::flex(1.)).child(input))
-                                .maybe(has_query, |row| {
-                                    row.child(
-                                        rect()
-                                            .width(Size::px(32.))
-                                            .height(Size::px(32.))
-                                            .center()
-                                            .corner_radius(16.)
-                                            .border(ui::focus_border(spot == Some(Spot::Action(1))))
-                                            .on_press(ui::tap(Target::Content(Spot::Action(1))))
-                                            .child(ui::icon(Icon::Close, 18., color::FOREGROUND)),
-                                    )
-                                }),
-                        )
-                    })
-                    .maybe(results.is_some(), |page| {
-                        page.child(chips(filter, spot, compact))
-                    })
-                    .map(status, |page, status| {
-                        page.child(ui::line(status, text::BODY, color::MUTED_FOREGROUND))
-                    })
-                    .map(results, |page, found| {
-                        let view = View {
-                            found: &found,
-                            spot,
-                            playing: playing.as_deref(),
-                            columns,
-                            compact,
-                            light,
-                        };
-                        match filter {
-                            Filter::All => page.children(view.everything(&shelves)),
-                            Filter::Songs => page.child(view.songs_list()),
-                            other => page.child(view.grid(other.group().unwrap_or(1))),
-                        }
-                    }),
-            )
+        // A finger scrolls through `TouchScroll`, which leaves sideways swipes to the rows.
+        ui::touch_scroll::TouchScroll {
+            scroll,
+            content: ScrollView::new_controlled(scroll)
+                .drag_scrolling(false)
+                .width(Size::fill())
+                .height(Size::fill())
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .padding(ui::inset())
+                        .spacing(18.)
+                        // A computer types in the bar on top; here only on a TV or a phone.
+                        .maybe(!crate::chrome::top_bar::shown(), |page| {
+                            page.child(
+                                rect()
+                                    .width(Size::fill())
+                                    .height(Size::px(48.))
+                                    .padding((0., 8., 0., 14.))
+                                    .direction(Direction::Horizontal)
+                                    .content(Content::Flex)
+                                    .cross_align(Alignment::Center)
+                                    .spacing(10.)
+                                    .corner_radius(24.)
+                                    .background(color::SECONDARY)
+                                    .border(field_border)
+                                    .on_press(ui::tap(Target::Content(Spot::Action(0))))
+                                    .child(ui::icon(Icon::Search, 18., color::MUTED_FOREGROUND))
+                                    .child(rect().width(Size::flex(1.)).child(input))
+                                    .maybe(has_query, |row| {
+                                        row.child(
+                                            rect()
+                                                .width(Size::px(32.))
+                                                .height(Size::px(32.))
+                                                .center()
+                                                .corner_radius(16.)
+                                                .border(ui::focus_border(
+                                                    spot == Some(Spot::Action(1)),
+                                                ))
+                                                .on_press(ui::tap(Target::Content(Spot::Action(1))))
+                                                .child(ui::icon(
+                                                    Icon::Close,
+                                                    18.,
+                                                    color::FOREGROUND,
+                                                )),
+                                        )
+                                    }),
+                            )
+                        })
+                        .maybe(results.is_some(), |page| {
+                            page.child(chips(filter, spot, compact))
+                        })
+                        .map(status, |page, status| {
+                            page.child(ui::line(status, text::BODY, color::MUTED_FOREGROUND))
+                        })
+                        .map(results, |page, found| {
+                            let view = View {
+                                found: &found,
+                                spot,
+                                playing: playing.as_deref(),
+                                columns,
+                                compact,
+                                light,
+                            };
+                            match filter {
+                                Filter::All => page.children(view.everything(&shelves)),
+                                Filter::Songs => page.child(view.songs_list()),
+                                other => page.child(view.grid(other.group().unwrap_or(1))),
+                            }
+                        }),
+                )
+                .into_element(),
+        }
     }
 }
 

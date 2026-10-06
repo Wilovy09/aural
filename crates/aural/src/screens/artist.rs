@@ -111,23 +111,29 @@ impl Component for Artist {
             .map(|(at, shelf)| shelf_row(at, shelf, spot, columns).into_element())
             .collect();
 
-        ScrollView::new_controlled(scroll)
-            .width(Size::fill())
-            .height(Size::fill())
-            .child(hero(&page, spot, light))
-            .child(
-                rect()
-                    .width(Size::fill())
-                    .padding((0., ui::inset(), ui::inset(), ui::inset()))
-                    .maybe(!top.is_empty(), |content| {
-                        content
-                            .child(section("Canciones más populares"))
-                            .children(top)
-                    })
-                    .child(rect().height(Size::px(24.)))
-                    .children(shelves),
-            )
-            .into_element()
+        // A finger scrolls through `TouchScroll`, which leaves sideways swipes to the rows.
+        ui::touch_scroll::TouchScroll {
+            scroll,
+            content: ScrollView::new_controlled(scroll)
+                .drag_scrolling(false)
+                .width(Size::fill())
+                .height(Size::fill())
+                .child(hero(&page, spot, light))
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .padding((0., ui::inset(), ui::inset(), ui::inset()))
+                        .maybe(!top.is_empty(), |content| {
+                            content
+                                .child(section("Canciones más populares"))
+                                .children(top)
+                        })
+                        .child(rect().height(Size::px(24.)))
+                        .children(shelves),
+                )
+                .into_element(),
+        }
+        .into_element()
     }
 }
 

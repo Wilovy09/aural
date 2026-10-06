@@ -194,6 +194,10 @@ impl Component for Songs {
                             .content(Content::Flex)
                             .maybe(!compact, |table| table.child(header()))
                             .child(
+                                rect().width(Size::fill()).height(Size::flex(1.)).child(
+                                    ui::touch_scroll::TouchScroll {
+                                scroll,
+                                content:
                                 // The data is what the rows depend on: the list compares it, not the
                                 // builder, to know when to redraw.
                                 VirtualScrollView::new_with_data_controlled(
@@ -212,8 +216,14 @@ impl Component for Songs {
                                 )
                                 .length(count)
                                 .item_size(row_height())
+                                // A finger scrolls through `TouchScroll`, which leaves sideways
+                                // swipes to the rows.
+                                .drag_scrolling(false)
                                 .width(Size::fill())
-                                .height(Size::flex(1.)),
+                                .height(Size::fill())
+                                .into_element(),
+                                },
+                                ),
                             ),
                     ),
             )
