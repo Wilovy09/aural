@@ -724,6 +724,7 @@ fn read(line: &str) -> Vec<LyricsLine> {
     stamps
         .into_iter()
         .map(|start| LyricsLine {
+            translation: None,
             start,
             end: closed.filter(|end| *end > start),
             text: text.clone(),
@@ -876,6 +877,7 @@ mod tests {
     #[test]
     fn parenthetical_words_become_an_independently_timed_background_lane() {
         let mut lines = vec![LyricsLine {
+            translation: None,
             start: Duration::from_secs(1),
             end: Some(Duration::from_secs(4)),
             text: "Lead (echo) after".to_owned(),
@@ -917,6 +919,7 @@ mod tests {
     #[test]
     fn removing_an_inline_background_lane_closes_the_punctuation_gap() {
         let mut lines = vec![LyricsLine {
+            translation: None,
             start: Duration::from_secs(1),
             end: Some(Duration::from_secs(4)),
             text: "Может, я murder (E), они все".to_owned(),
@@ -962,6 +965,7 @@ mod tests {
     fn a_standalone_parenthetical_line_attaches_to_the_previous_verse() {
         let mut lines = vec![
             LyricsLine {
+                translation: None,
                 start: Duration::from_secs(1),
                 end: Some(Duration::from_secs(2)),
                 text: "Lead".to_owned(),
@@ -975,6 +979,7 @@ mod tests {
                 voice: Voice::Lead,
             },
             LyricsLine {
+                translation: None,
                 start: Duration::from_secs(2),
                 end: Some(Duration::from_secs(3)),
                 text: "(echo)".to_owned(),

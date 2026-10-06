@@ -1,5 +1,5 @@
 //! `cargo run -p lyrics --example find -- "<title>" "<artist>" <seconds>`: asks every provider
-//! and prints what each answered and which sheet wins.
+//! and prints what each answered, which sheet wins and its translation.
 
 use std::time::Duration;
 
@@ -36,6 +36,22 @@ async fn main() {
             if let lyrics::Lyrics::Synced { lines } = &best.lyrics {
                 for line in lines.iter().take(6) {
                     println!("  [{:>6.2}] {}", line.start.as_secs_f64(), line.text);
+                }
+                match lyrics::translate(&query, lines).await {
+                    Some(found) => {
+                        println!(
+                            "\ntranslation: {} (machine={})",
+                            found.source, found.machine
+                        );
+                        for (line, translated) in lines.iter().zip(&found.lines).take(8) {
+                            println!(
+                                "  {}\n    → {}",
+                                line.text,
+                                translated.as_deref().unwrap_or("-")
+                            );
+                        }
+                    }
+                    None => println!("\nno translation"),
                 }
             }
         }

@@ -20,8 +20,19 @@ pub(crate) fn parse(xml: &str) -> Result<Sheet> {
     let document = Document::parse(xml).context("cannot read the ttml")?;
     let singers = singers(&document);
     let lead = lead(&document, &singers);
+    let translated = translations(&document);
     let mut lines: Vec<LyricsLine> = paragraphs(&document)
-        .filter_map(|paragraph| line(paragraph, lead, &singers))
+        .filter_map(|paragraph| {
+            let mut line = line(paragraph, lead, &singers)?;
+            line.translation = inline(paragraph).or_else(|| {
+                let key = paragraph
+                    .attributes()
+                    .find(|attribute| attribute.name() == "key")
+                    .map(|attribute| attribute.value())?;
+                translated.get(key).cloned()
+            });
+            Some(line)
+        })
         .collect();
 
     let timed = lines
@@ -51,6 +62,43 @@ pub(crate) fn parse(xml: &str) -> Result<Sheet> {
 
 fn paragraphs<'a>(document: &'a Document<'a>) -> impl Iterator<Item = Node<'a, 'a>> {
     document.descendants().filter(|node| named(*node, "p"))
+}
+
+/// The translation a line carries inside it, as an `x-translation` span.
+fn inline(paragraph: Node) -> Option<String> {
+    let text = paragraph
+        .descendants()
+        .filter(|node| role(*node) == Some("x-translation"))
+        .flat_map(|node| node.descendants().filter(Node::is_text))
+        .filter_map(|node| node.text())
+        .collect::<String>();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!text.is_empty()).then_some(text)
+}
+
+/// The sheet's translations into the listener's language, from its head, by line key.
+fn translations(document: &Document) -> HashMap<String, String> {
+    let wanted = crate::language();
+    document
+        .descendants()
+        .filter(|node| named(*node, "translation"))
+        .filter(|node| {
+            node.attribute((XML, "lang"))
+                .or_else(|| node.attribute("lang"))
+                .is_some_and(|lang| lang.to_lowercase().starts_with(&wanted))
+        })
+        .flat_map(|node| node.children().filter(|child| named(*child, "text")))
+        .filter_map(|text| {
+            let key = text.attribute("for")?.to_owned();
+            let words = text
+                .descendants()
+                .filter(Node::is_text)
+                .filter_map(|node| node.text())
+                .collect::<String>();
+            let words = words.split_whitespace().collect::<Vec<_>>().join(" ");
+            (!words.is_empty()).then_some((key, words))
+        })
+        .collect()
 }
 
 fn writers(document: &Document) -> Vec<String> {
@@ -97,6 +145,7 @@ fn line(paragraph: Node, lead: Option<&str>, singers: &HashMap<&str, bool>) -> O
     let end = stamp(paragraph, "end").or_else(|| words.last().map(|word| word.end));
 
     Some(LyricsLine {
+        translation: None,
         start,
         end: end.map(|end| end.max(start)),
         text,

@@ -2,6 +2,8 @@
 //! romanization), LRC and TTML parsing, the providers (Apple Music via Binimum, Musixmatch,
 //! YouTube Music, LRCLIB, NetEase, KuGou) and the ranking that picks between their answers.
 
+mod translate;
+pub use translate::{Translation, translate};
 mod binimum;
 mod escape;
 mod kugou;
@@ -86,6 +88,9 @@ pub struct LyricsLine {
     pub secondary: Vec<LyricsLane>,
     #[serde(default, skip_serializing_if = "Voice::lead")]
     pub voice: Voice,
+    /// The line in the listener's language, when a translation was found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
 }
 
 impl LyricsLine {
@@ -251,6 +256,18 @@ pub fn providers() -> Vec<Arc<dyn LyricsProvider>> {
         Arc::new(netease::NetEase::new()),
         Arc::new(kugou::Kugou::new()),
     ]
+}
+
+static LANGUAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Sets the language lines are translated into, an ISO 639-1 code such as `es`. Once.
+pub fn set_language(code: &str) {
+    let _ = LANGUAGE.set(code.to_lowercase());
+}
+
+/// The language lines are translated into; Spanish until told otherwise.
+pub fn language() -> String {
+    LANGUAGE.get().cloned().unwrap_or_else(|| "es".to_owned())
 }
 
 /// The source name Apple Music's sheets (through Binimum) carry.

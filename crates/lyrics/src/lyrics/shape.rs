@@ -79,6 +79,7 @@ pub(crate) fn conform(worded: &Lyrics, guide: &Lyrics) -> Option<Lyrics> {
         let start = words.first().map(|word| word.start)?;
         let end = words.iter().map(|word| word.end).max()?;
         lines.push(LyricsLine {
+            translation: None,
             start,
             end: Some(end.max(start)),
             text: line.text.clone(),
