@@ -68,7 +68,6 @@ impl KeyExt for Swipe {
 impl Component for Swipe {
     fn render(&self) -> impl IntoElement {
         let mut gesture = use_state(|| Gesture::Idle);
-        let mut width = use_state(|| 0f32);
         let on_swipe = self.on_swipe.clone();
         let pulled = match *gesture.read() {
             Gesture::Swiping(_, pulled) => pulled,
@@ -86,19 +85,12 @@ impl Component for Swipe {
         });
         let offset = shown.get().value().clamp(0., ACTION);
         let ready = offset >= TRIGGER;
-        let wide = *width.read();
 
         rect()
             .width(Size::fill())
             .height(Size::px(self.height))
             .overflow(Overflow::Clip)
             .corner_radius(metrics::RADIUS_SM)
-            .on_sized(move |event: Event<SizedEventData>| {
-                let measured = event.area.width();
-                if (*width.peek() - measured).abs() > 0.5 {
-                    width.set(measured);
-                }
-            })
             .on_pointer_down(move |event: Event<PointerEventData>| {
                 let at = event.global_location();
                 gesture.set(Gesture::Pressing(at.x, at.y));
@@ -140,17 +132,16 @@ impl Component for Swipe {
             // The row and the action beside it slide left together, so the action shows as
             // the row uncovers it; it lights up once letting go would do it.
             .child(
+                // As wide as the row plus the action, laid out by Freya from the room it has:
+                // nothing is measured, so a recycled row never shows a stale width.
                 rect()
-                    .width(Size::px(wide + ACTION))
+                    .width(Size::func(|context| Some(context.parent + ACTION)))
                     .height(Size::px(self.height))
                     .direction(Direction::Horizontal)
                     .offset_x(-offset)
                     .child(
                         rect()
-                            .width(match wide > 0. {
-                                true => Size::px(wide),
-                                false => Size::fill(),
-                            })
+                            .width(Size::func(|context| Some(context.parent - ACTION)))
                             .height(Size::px(self.height))
                             .background(match offset > 0. {
                                 true => self.surface,
@@ -158,7 +149,8 @@ impl Component for Swipe {
                             })
                             .child(self.content.clone()),
                     )
-                    .child(
+                    // The action exists only while the row slides.
+                    .maybe_child((offset > 0.).then(|| {
                         rect()
                             .width(Size::px(ACTION))
                             .height(Size::px(self.height))
@@ -174,8 +166,8 @@ impl Component for Swipe {
                             .child(
                                 line(self.label, text::LABEL, color::FOREGROUND)
                                     .font_weight(FontWeight::SEMI_BOLD),
-                            ),
-                    ),
+                            )
+                    })),
             )
     }
 
