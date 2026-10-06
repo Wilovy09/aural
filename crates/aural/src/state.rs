@@ -276,6 +276,18 @@ pub struct AppState {
     /// The search field has the keyboard: keys go to it, not to the D-pad navigation.
     pub typing: bool,
     pub connect: Connect,
+    /// A short notice over the player, Spotify's "Added to queue".
+    pub toast: Option<Toast>,
+}
+
+/// A notice that shows for a moment and goes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Toast {
+    pub text: String,
+    /// Whether it offers to open the queue.
+    pub open_queue: bool,
+    /// Tells one notice from the next, so an old timer does not hide a new one.
+    pub id: u64,
 }
 
 /// Aural Connect: the devices around, this device's link to one, a code it shows.
@@ -378,6 +390,7 @@ pub enum Channel {
     Lyrics,
     Search,
     Connect,
+    Toast,
 }
 
 impl RadioChannel<AppState> for Channel {}

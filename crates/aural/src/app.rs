@@ -399,6 +399,7 @@ pub fn app() -> impl IntoElement {
             },
         ))
         .child(crate::screens::pairing::PairingCode)
+        .child(crate::chrome::toast::Notice)
 }
 
 /// The cover's light behind the top of the page: the song playing tints the room.
@@ -697,6 +698,7 @@ pub fn enqueue(song: library::Song) {
         return;
     };
     player(station, &engine, Command::Enqueue(song));
+    toast(station, "Agregado a la cola", true);
 }
 
 /// Takes the song at `at` out of the queue of the player that plays.
@@ -705,16 +707,51 @@ pub fn remove_from_queue(at: usize) {
         return;
     };
     player(station, &engine, Command::Remove(at));
+    toast(station, "Quitado de la cola", false);
 }
 
-/// Likes or unlikes the song playing, from a tap on a heart.
-pub fn like_now() {
-    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+/// How long a notice stays.
+const TOAST_FOR: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// Shows `text` over the player for a moment, offering to open the queue when `open_queue`.
+fn toast(mut station: Station, text: &str, open_queue: bool) {
+    let id = station
+        .peek()
+        .toast
+        .as_ref()
+        .map_or(0, |toast| toast.id + 1);
+    station.write_channel(Channel::Toast).toast = Some(crate::state::Toast {
+        text: text.to_owned(),
+        open_queue,
+        id,
+    });
+    spawn_forever(async move {
+        let _ = runtime::spawn(async { tokio::time::sleep(TOAST_FOR).await }).await;
+        let still = station
+            .peek()
+            .toast
+            .as_ref()
+            .is_some_and(|toast| toast.id == id);
+        if still {
+            station.write_channel(Channel::Toast).toast = None;
+        }
+    });
+}
+
+/// Opens the fullscreen player on the queue, from a notice's "Abrir".
+pub fn open_queue() {
+    let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) else {
         return;
     };
-    if let Some(song) = station.peek().now.song.clone() {
-        toggle_like(station, song);
+    station.write_channel(Channel::Toast).toast = None;
+    if station.peek().now.song.is_none() {
+        return;
     }
+    let mut state = station.write_channel(Channel::Navigation);
+    state.fullscreen = true;
+    state.view = crate::state::View::Queue;
+    state.focus.full_row = 1;
+    state.focus.full_button = 2;
 }
 
 /// Likes or unlikes `song`, from a tap on a row's heart.
