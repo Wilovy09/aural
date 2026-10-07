@@ -15,7 +15,7 @@ path = "src/main.rs"
 freya.workspace = true
 freya-winit.workspace = true
 # The Skia Freya renders with, for the mesh the backdrop warps (not re-exported by Freya).
-skia-safe = { package = "freya-skia-safe", version = "0.98" }
+skia-safe = { package = "freya-skia-safe", version = "=0.100.0-beta.1" }
 log.workspace = true
 anyhow.workspace = true
 bytes = "1"
@@ -39,6 +39,21 @@ android_logger.workspace = true
 jni = "0.21"
 # QuickJS ships no pregenerated bindings for Android; generate them at build time.
 rquickjs = { version = "0.12", features = ["bindgen"] }
+
+# Nor for iOS.
+[target.'cfg(target_os = "ios")'.dependencies]
+rquickjs = { version = "0.12", features = ["bindgen"] }
+objc2 = "0.6"
+objc2-ui-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "UIApplication",
+  "UIGeometry",
+  "UIResponder",
+  "UIScreen",
+  "UIView",
+  "UIWindow",
+] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger.workspace = true

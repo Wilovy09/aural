@@ -117,7 +117,7 @@ impl Component for Swipe {
                     Gesture::Idle => {}
                 }
             })
-            .on_global_pointer_press(move |_: Event<PointerEventData>| {
+            .on_global_pointer_up(move |_: Event<PointerEventData>| {
                 let ended = *gesture.peek();
                 if let Gesture::Swiping(_, pulled) = ended {
                     mark();

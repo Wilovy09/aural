@@ -16,7 +16,7 @@
 //! is loaded once more: with the account already in, it only runs the hop that was skipped, which
 //! is exactly what the page's own Sign in button would do.
 //!
-//! macOS, Windows and Linux have native backends. Every other platform reports
+//! macOS, iOS, Windows and Linux have native backends. Every other platform reports
 //! `supported() == false` and `Page::open` fails, so a caller falls back to pasting a header or
 //! goes without a token.
 
@@ -37,12 +37,32 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux as platform;
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(target_os = "ios")]
+mod ios;
+#[cfg(target_os = "ios")]
+use ios as platform;
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+))]
 mod native;
 
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 mod unsupported;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 use unsupported as platform;
 
 /// What a window is asked to do. `url` opens first. `landing` scopes cookie reads on platforms

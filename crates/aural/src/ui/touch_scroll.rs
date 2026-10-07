@@ -75,7 +75,7 @@ impl Component for TouchScroll {
                     super::swipe::mark();
                 }
             })
-            .on_global_pointer_press(move |_: Event<PointerEventData>| {
+            .on_global_pointer_up(move |_: Event<PointerEventData>| {
                 let held = touch.peek().is_some();
                 if held {
                     touch.set(None);

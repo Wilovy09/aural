@@ -71,7 +71,8 @@ impl Component for Cards {
                 // to know when to redraw.
                 VirtualScrollView::new_with_data_controlled(
                     (cards, focused, columns),
-                    |line, (cards, focused, columns)| {
+                    |item, (cards, focused, columns)| {
+                        let line = item.index;
                         let (focused, columns) = (*focused, *columns);
                         rect()
                             .key(line)

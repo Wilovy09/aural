@@ -8,8 +8,8 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
-freya = { version = "0.4.3", features = ["engine", "radio"] }
-freya-winit = "0.4.3"
+freya = { path = "../freya/crates/freya", features = ["engine", "radio"] }
+freya-winit = { path = "../freya/crates/freya-winit" }
 winit = "0.30.13"
 log = "0.4"
 android_logger = "0.15"

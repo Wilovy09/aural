@@ -106,7 +106,7 @@ pub fn view(art: Option<Art>, number: u64, side: f32) -> impl IntoElement {
         .corner_radius(RADIUS)
         .background((28, 28, 36))
         .maybe_child(art.map(|art| {
-            canvas(RenderCallback::new(move |context: &mut CanvasContext| {
+            rect().background(RenderCallback::new(move |context| {
                 let image = match &art {
                     Art::Motion(frame) => {
                         let info = ImageInfo::new(

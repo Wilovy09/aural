@@ -374,7 +374,7 @@ impl Component for Progress {
                             held.set(Some(share(x)));
                         }
                     })
-                    .on_global_pointer_press(move |_: Event<PointerEventData>| {
+                    .on_global_pointer_up(move |_: Event<PointerEventData>| {
                         let at = *held.peek();
                         if let Some(at) = at {
                             held.set(None);

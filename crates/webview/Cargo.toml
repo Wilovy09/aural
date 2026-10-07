@@ -46,6 +46,53 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
   "WKWebsiteDataStore",
 ] }
 
+[target.'cfg(target_os = "ios")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSEnumerator",
+  "NSHTTPCookie",
+  "NSObject",
+  "NSSet",
+  "NSString",
+  "NSURL",
+  "NSURLRequest",
+] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "NSText",
+  "UIAction",
+  "UIApplication",
+  "UIButton",
+  "UIColor",
+  "UIControl",
+  "UIFont",
+  "UIGeometry",
+  "UILabel",
+  "UIMenuElement",
+  "UIResponder",
+  "UIScene",
+  "UISceneDefinitions",
+  "UIView",
+  "UIViewController",
+  "UIWindow",
+  "UIWindowScene",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "WKHTTPCookieStore",
+  "WKUserContentController",
+  "WKUserScript",
+  "WKWebViewConfiguration",
+  "WKWebsiteDataStore",
+] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 dirs = "6"
 webview2-com = "0.39"
