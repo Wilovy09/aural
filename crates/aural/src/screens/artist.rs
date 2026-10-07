@@ -115,6 +115,8 @@ impl Component for Artist {
         ui::touch_scroll::TouchScroll {
             scroll,
             content: ScrollView::new_controlled(scroll)
+                // A phone scrolls under the finger, with no bar to drag.
+                .show_scrollbar(!ui::compact())
                 .drag_scrolling(false)
                 .width(Size::fill())
                 .height(Size::fill())

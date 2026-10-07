@@ -76,6 +76,8 @@ impl Component for Home {
         };
 
         ScrollView::new_controlled(scroll)
+            // A phone scrolls under the finger, with no bar to drag.
+            .show_scrollbar(!ui::compact())
             .width(Size::fill())
             .height(Size::fill())
             .child(

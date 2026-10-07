@@ -42,6 +42,8 @@ impl Component for Account {
         let photo = account.as_ref().and_then(|account| account.photo.clone());
 
         ScrollView::new()
+            // A phone scrolls under the finger, with no bar to drag.
+            .show_scrollbar(!ui::compact())
             .width(Size::fill())
             .height(Size::fill())
             .child(

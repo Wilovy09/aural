@@ -216,6 +216,7 @@ impl Component for Songs {
                                     scroll,
                                 )
                                 .length(count)
+                                .show_scrollbar(!ui::compact())
                                 .item_size(row_height())
                                 // A finger scrolls through `TouchScroll`, which leaves sideways
                                 // swipes to the rows.

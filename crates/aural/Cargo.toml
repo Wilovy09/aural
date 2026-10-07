@@ -15,7 +15,7 @@ path = "src/main.rs"
 freya.workspace = true
 freya-winit.workspace = true
 # The Skia Freya renders with, for the mesh the backdrop warps (not re-exported by Freya).
-skia-safe = { package = "freya-skia-safe", version = "=0.100.0-beta.1" }
+skia-safe = { package = "freya-skia-safe", version = "=0.102.0" }
 log.workspace = true
 anyhow.workspace = true
 bytes = "1"
