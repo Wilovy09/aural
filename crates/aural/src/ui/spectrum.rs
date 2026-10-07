@@ -146,7 +146,7 @@ impl Component for Spectrum {
             false => 0.,
         };
         let tint = self.tint;
-        canvas(RenderCallback::new(move |context: &mut CanvasContext| {
+        rect().background(RenderCallback::new(move |context| {
             use skia_safe::{Paint, Rect};
             let side = context.size.width.min(context.size.height);
             let scale = side / WIDTH.max(HEIGHT);

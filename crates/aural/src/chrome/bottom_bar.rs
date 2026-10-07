@@ -71,7 +71,7 @@ impl Component for BottomBar {
                         true => FontWeight::SEMI_BOLD,
                         false => FontWeight::NORMAL,
                     }))
-                    .into()
+                    .into_element()
             }))
     }
 }

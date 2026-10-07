@@ -154,7 +154,7 @@ impl Component for LyricsPanel {
                                     .font_size(text::BODY)
                                     .color(dim(AHEAD))
                                     .width(Size::fill())
-                                    .into()
+                                    .into_element()
                             }),
                         ))
                     }),
@@ -257,7 +257,7 @@ fn synced(sheet: SyncedSheet, mut heights: State<Vec<f32>>) -> impl IntoElement 
                     }
                 })
                 .child(content)
-                .into()
+                .into_element()
         }))
 }
 

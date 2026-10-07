@@ -140,7 +140,7 @@ pub fn wash(light: Color, strength: f32) -> impl IntoElement {
     use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
     use skia_safe::{Color4f, Paint, Point, Rect, TileMode};
 
-    canvas(RenderCallback::new(move |context: &mut CanvasContext| {
+    rect().background(RenderCallback::new(move |context| {
         let (width, height) = (context.size.width, context.size.height);
         let tone = |alpha: f32| {
             Color4f::new(

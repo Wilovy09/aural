@@ -63,7 +63,8 @@ impl Component for QueuePanel {
                         scroll,
                         content: VirtualScrollView::new_with_data_controlled(
                             (upcoming, first, moving),
-                            |index, (upcoming, first, moving)| {
+                            |item, (upcoming, first, moving)| {
+                                let index = item.index;
                                 Movable {
                                     at: first + index,
                                     song: upcoming[index].clone(),
@@ -161,7 +162,7 @@ impl Component for Movable {
                     moving.set(Some(Moving { to, ..it }));
                 }
             })
-            .on_global_pointer_press(move |_: Event<PointerEventData>| {
+            .on_global_pointer_up(move |_: Event<PointerEventData>| {
                 let Some(it) = *moving.peek() else {
                     return;
                 };

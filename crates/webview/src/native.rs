@@ -1,4 +1,4 @@
-//! What the three native backends share: how big the window opens, how a raw source url is read,
+//! What the native backends share: how big the window opens, how a raw source url is read,
 //! and how one cookie round trip is driven. Every backend reads cookies asynchronously and answers
 //! `poll` from whatever the last read left behind, so the state machine is the same in all of them
 //! and only the call that starts a read differs.
@@ -6,10 +6,14 @@
 use crate::Cookie;
 
 /// How big the sign-in window opens, and how small it may be dragged. Each backend spells these in
-/// its own toolkit's units.
+/// its own toolkit's units. On iOS the window covers the screen instead.
+#[cfg(not(target_os = "ios"))]
 pub(crate) const WIDTH: i32 = 520;
+#[cfg(not(target_os = "ios"))]
 pub(crate) const HEIGHT: i32 = 720;
+#[cfg(not(target_os = "ios"))]
 pub(crate) const MIN_WIDTH: i32 = 400;
+#[cfg(not(target_os = "ios"))]
 pub(crate) const MIN_HEIGHT: i32 = 500;
 
 /// The state of one cookie round trip.

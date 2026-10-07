@@ -316,7 +316,7 @@ fn chips(filter: Filter, spot: Option<Spot>, compact: bool) -> impl IntoElement 
                             false => color::FOREGROUND,
                         }),
                 )
-                .into()
+                .into_element()
         }))
 }
 

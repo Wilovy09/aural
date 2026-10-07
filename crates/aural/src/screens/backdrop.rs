@@ -108,7 +108,7 @@ impl Component for Backdrop {
             .height(Size::px(height))
             .background(ui::color::BACKGROUND)
             .child(
-                canvas(RenderCallback::new(move |context: &mut CanvasContext| {
+                rect().background(RenderCallback::new(move |context| {
                     let size = (context.size.width, context.size.height);
                     let layers = [(previous.as_ref(), 1.), (current.as_ref(), fade)];
                     for (base, alpha) in layers {
