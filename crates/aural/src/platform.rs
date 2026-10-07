@@ -48,3 +48,23 @@ pub fn multicast() -> anyhow::Result<()> {
         Ok(())
     })
 }
+
+/// The room the notch (or the status bar) and the home indicator take, in physical pixels, read
+/// off the app's window: Freya draws under them, as on Android.
+#[cfg(target_os = "ios")]
+pub fn insets() -> (f32, f32) {
+    use objc2::MainThreadMarker;
+    use objc2_ui_kit::UIApplication;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return (0., 0.);
+    };
+    let application = UIApplication::sharedApplication(mtm);
+    #[allow(deprecated)]
+    let Some(window) = application.keyWindow().or_else(|| application.windows().firstObject())
+    else {
+        return (0., 0.);
+    };
+    let insets = window.safeAreaInsets();
+    let scale = window.screen().scale();
+    ((insets.top * scale) as f32, (insets.bottom * scale) as f32)
+}

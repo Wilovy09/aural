@@ -343,7 +343,7 @@ fn fade(light: Option<Color>) -> impl IntoElement {
     use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
     use skia_safe::{Color4f, Paint, Point, Rect, TileMode};
 
-    canvas(RenderCallback::new(move |context: &mut CanvasContext| {
+    rect().background(RenderCallback::new(move |context| {
         let (width, height) = (context.size.width, context.size.height);
         let shade = |alpha: f32| Color4f::new(0.035, 0.035, 0.035, alpha);
         // Halfway down, the dark takes on the photo's light before it closes into the page.

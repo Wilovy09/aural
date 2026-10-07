@@ -318,7 +318,13 @@ pub fn safe() -> (f32, f32) {
         let (top, bottom) = crate::login::insets();
         (top / scale, bottom / scale)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        let scale = (*Platform::get().scale_factor.read() as f32).max(0.5);
+        let (top, bottom) = crate::platform::insets();
+        (top / scale, bottom / scale)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     (0., 0.)
 }
 
@@ -546,6 +552,6 @@ pub fn tabs(entries: &[(Icon, &str)], selected: usize, focused: Option<usize>) -
                 .on_press(tap(crate::nav::Target::Tab(index)))
                 .child(icon(*glyph, metrics::ICON, ink))
                 .child(line(*name, text::LABEL, ink).font_weight(FontWeight::SEMI_BOLD))
-                .into()
+                .into_element()
         }))
 }

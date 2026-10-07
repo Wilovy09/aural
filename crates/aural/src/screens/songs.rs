@@ -202,7 +202,8 @@ impl Component for Songs {
                                 // builder, to know when to redraw.
                                 VirtualScrollView::new_with_data_controlled(
                                     (songs, row, playing),
-                                    |index, (songs, row, playing)| {
+                                    |item, (songs, row, playing)| {
+                                        let index = item.index;
                                         let song = &songs[index];
                                         track_row(
                                             index,

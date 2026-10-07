@@ -66,7 +66,7 @@ pub fn apply_interface(scale: Scale) {
     let zoom = scale.zoom();
     let _ = freya::prelude::Platform::get().post_callback(move |id, context| {
         if let Some(window) = context.windows.get_mut(&id) {
-            window.set_user_zoom(zoom);
+            window.set_custom_scale_factor(zoom as f64);
         }
     });
 }
