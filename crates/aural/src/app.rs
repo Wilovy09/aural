@@ -348,11 +348,12 @@ pub fn app() -> impl IntoElement {
                 )
                 .child(MiniPlayer)
                 .child(BottomBar)
+                // Under the home indicator the tab bar carries on, so the bar reaches the edge.
                 .child(
                     rect()
                         .width(Size::fill())
                         .height(Size::px(bottom))
-                        .background(ui::color::SECONDARY),
+                        .background(ui::color::BACKGROUND),
                 )
         }
         false => rect()

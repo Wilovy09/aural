@@ -89,6 +89,7 @@ impl Component for Cards {
                     scroll,
                 )
                 .length(rows)
+                .show_scrollbar(!ui::compact())
                 .item_size(row())
                 .width(Size::fill())
                 .height(Size::flex(1.)),
