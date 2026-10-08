@@ -67,6 +67,8 @@ fn launch_config() -> LaunchConfig {
 #[cfg(not(target_os = "android"))]
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    #[cfg(target_os = "ios")]
+    platform::audio_session();
     launch(launch_config());
 }
 

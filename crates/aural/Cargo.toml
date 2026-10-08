@@ -44,6 +44,11 @@ rquickjs = { version = "0.12", features = ["bindgen"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 rquickjs = { version = "0.12", features = ["bindgen"] }
 objc2 = "0.6"
+objc2-avf-audio = { version = "0.3", default-features = false, features = [
+  "std",
+  "AVAudioSession",
+  "AVAudioSessionTypes",
+] }
 objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "std",
   "objc2-core-foundation",
