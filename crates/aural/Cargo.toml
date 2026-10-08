@@ -59,6 +59,32 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIView",
   "UIWindow",
 ] }
+block2 = "0.6"
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "CFCGTypes",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSData",
+  "NSDictionary",
+  "NSNotification",
+  "NSOperation",
+  "NSString",
+  "NSValue",
+] }
+objc2-media-player = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "MPMediaEntity",
+  "MPMediaItem",
+  "MPNowPlayingInfoCenter",
+  "MPRemoteCommand",
+  "MPRemoteCommandCenter",
+  "MPRemoteCommandEvent",
+] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger.workspace = true
