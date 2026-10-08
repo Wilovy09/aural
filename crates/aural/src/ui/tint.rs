@@ -140,35 +140,36 @@ pub fn wash(light: Color, strength: f32) -> impl IntoElement {
     use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
     use skia_safe::{Color4f, Paint, Point, Rect, TileMode};
 
-    rect().background(RenderCallback::new(move |context| {
-        let (width, height) = (context.size.width, context.size.height);
-        let tone = |alpha: f32| {
-            Color4f::new(
-                light.r() as f32 / 255.,
-                light.g() as f32 / 255.,
-                light.b() as f32 / 255.,
-                alpha,
-            )
-        };
-        let colors = [tone(strength), tone(strength * 0.45), tone(0.)];
-        let stops = [0., 0.45, 1.];
-        let gradient = Gradient::new(
-            Colors::new(&colors, Some(&stops[..]), TileMode::Clamp, None),
-            Interpolation::default(),
-        );
-        let Some(shader) = shaders::linear_gradient(
-            (Point::new(0., 0.), Point::new(0., height)),
-            &gradient,
-            None,
-        ) else {
-            return;
-        };
-        let mut paint = Paint::default();
-        paint.set_shader(shader);
-        context
-            .canvas
-            .draw_rect(Rect::from_wh(width, height), &paint);
-    }))
-    .width(Size::fill())
-    .height(Size::fill())
+    rect()
+        .background(RenderCallback::new(move |context| {
+            let (width, height) = (context.size.width, context.size.height);
+            let tone = |alpha: f32| {
+                Color4f::new(
+                    light.r() as f32 / 255.,
+                    light.g() as f32 / 255.,
+                    light.b() as f32 / 255.,
+                    alpha,
+                )
+            };
+            let colors = [tone(strength), tone(strength * 0.45), tone(0.)];
+            let stops = [0., 0.45, 1.];
+            let gradient = Gradient::new(
+                Colors::new(&colors, Some(&stops[..]), TileMode::Clamp, None),
+                Interpolation::default(),
+            );
+            let Some(shader) = shaders::linear_gradient(
+                (Point::new(0., 0.), Point::new(0., height)),
+                &gradient,
+                None,
+            ) else {
+                return;
+            };
+            let mut paint = Paint::default();
+            paint.set_shader(shader);
+            context
+                .canvas
+                .draw_rect(Rect::from_wh(width, height), &paint);
+        }))
+        .width(Size::fill())
+        .height(Size::fill())
 }

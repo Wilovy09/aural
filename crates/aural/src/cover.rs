@@ -106,42 +106,43 @@ pub fn view(art: Option<Art>, number: u64, side: f32) -> impl IntoElement {
         .corner_radius(RADIUS)
         .background((28, 28, 36))
         .maybe_child(art.map(|art| {
-            rect().background(RenderCallback::new(move |context| {
-                let image = match &art {
-                    Art::Motion(frame) => {
-                        let info = ImageInfo::new(
-                            (frame.width as i32, frame.height as i32),
-                            ColorType::RGBA8888,
-                            AlphaType::Opaque,
-                            None,
-                        );
-                        raster_from_data(
-                            &info,
-                            SkData::new_copy(&frame.rgba),
-                            frame.width as usize * 4,
-                        )
-                    }
-                };
-                let Some(image) = image else {
-                    return;
-                };
-                let target = SkRect::from_wh(context.size.width, context.size.height);
-                context.canvas.save();
-                context.canvas.clip_rrect(
-                    SkRRect::new_rect_xy(target, RADIUS, RADIUS),
-                    ClipOp::Intersect,
-                    true,
-                );
-                context.canvas.draw_image_rect_with_sampling_options(
-                    &image,
-                    None,
-                    target,
-                    SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
-                    &Paint::default(),
-                );
-                context.canvas.restore();
-            }))
-            .key(number)
-            .expanded()
+            rect()
+                .background(RenderCallback::new(move |context| {
+                    let image = match &art {
+                        Art::Motion(frame) => {
+                            let info = ImageInfo::new(
+                                (frame.width as i32, frame.height as i32),
+                                ColorType::RGBA8888,
+                                AlphaType::Opaque,
+                                None,
+                            );
+                            raster_from_data(
+                                &info,
+                                SkData::new_copy(&frame.rgba),
+                                frame.width as usize * 4,
+                            )
+                        }
+                    };
+                    let Some(image) = image else {
+                        return;
+                    };
+                    let target = SkRect::from_wh(context.size.width, context.size.height);
+                    context.canvas.save();
+                    context.canvas.clip_rrect(
+                        SkRRect::new_rect_xy(target, RADIUS, RADIUS),
+                        ClipOp::Intersect,
+                        true,
+                    );
+                    context.canvas.draw_image_rect_with_sampling_options(
+                        &image,
+                        None,
+                        target,
+                        SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
+                        &Paint::default(),
+                    );
+                    context.canvas.restore();
+                }))
+                .key(number)
+                .expanded()
         }))
 }

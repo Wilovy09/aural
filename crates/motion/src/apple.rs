@@ -43,7 +43,8 @@ pub fn play(path: &Path, mut show: impl FnMut(Frame) -> bool) -> Result<()> {
     // BGRA is the one 8-bit RGB layout every decoder hands out without a conversion pass.
     let format = NSNumber::new_u32(kCVPixelFormatType_32BGRA);
     // SAFETY: CFString and NSString are toll-free bridged.
-    let key: &NSString = unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
+    let key: &NSString =
+        unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
     let value: &AnyObject = &format;
     let settings = NSDictionary::from_slices(&[key], &[value]);
 
@@ -73,7 +74,11 @@ pub fn play(path: &Path, mut show: impl FnMut(Frame) -> bool) -> Result<()> {
             }
             let frame = convert(&image, pts)?;
             if !logged {
-                log::info!("motion: decoding {}x{} with AVFoundation", frame.width, frame.height);
+                log::info!(
+                    "motion: decoding {}x{} with AVFoundation",
+                    frame.width,
+                    frame.height
+                );
                 logged = true;
             }
             frames += 1;
@@ -82,7 +87,9 @@ pub fn play(path: &Path, mut show: impl FnMut(Frame) -> bool) -> Result<()> {
             }
         }
         if frames == 0 {
-            bail!("the decoder gave no frames ({:?})", unsafe { output.0.status() });
+            bail!("the decoder gave no frames ({:?})", unsafe {
+                output.0.status()
+            });
         }
         // End of a pass: keep the clock running past the last frame.
         offset = last + FRAME;

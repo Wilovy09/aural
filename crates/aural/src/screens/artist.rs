@@ -345,41 +345,42 @@ fn fade(light: Option<Color>) -> impl IntoElement {
     use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
     use skia_safe::{Color4f, Paint, Point, Rect, TileMode};
 
-    rect().background(RenderCallback::new(move |context| {
-        let (width, height) = (context.size.width, context.size.height);
-        let shade = |alpha: f32| Color4f::new(0.035, 0.035, 0.035, alpha);
-        // Halfway down, the dark takes on the photo's light before it closes into the page.
-        let tinted = |alpha: f32| match light {
-            Some(light) => {
-                let mixed = ui::tint::mix(color::BACKGROUND, light, 0.30);
-                Color4f::new(
-                    mixed.r() as f32 / 255.,
-                    mixed.g() as f32 / 255.,
-                    mixed.b() as f32 / 255.,
-                    alpha,
-                )
-            }
-            None => shade(alpha),
-        };
-        let colors = [shade(0.10), tinted(0.30), tinted(0.80), shade(1.)];
-        let stops = [0., 0.45, 0.8, 1.];
-        let gradient = Gradient::new(
-            Colors::new(&colors, Some(&stops[..]), TileMode::Clamp, None),
-            Interpolation::default(),
-        );
-        let Some(shader) = shaders::linear_gradient(
-            (Point::new(0., 0.), Point::new(0., height)),
-            &gradient,
-            None,
-        ) else {
-            return;
-        };
-        let mut paint = Paint::default();
-        paint.set_shader(shader);
-        context
-            .canvas
-            .draw_rect(Rect::from_wh(width, height), &paint);
-    }))
-    .width(Size::fill())
-    .height(Size::px(hero_height()))
+    rect()
+        .background(RenderCallback::new(move |context| {
+            let (width, height) = (context.size.width, context.size.height);
+            let shade = |alpha: f32| Color4f::new(0.035, 0.035, 0.035, alpha);
+            // Halfway down, the dark takes on the photo's light before it closes into the page.
+            let tinted = |alpha: f32| match light {
+                Some(light) => {
+                    let mixed = ui::tint::mix(color::BACKGROUND, light, 0.30);
+                    Color4f::new(
+                        mixed.r() as f32 / 255.,
+                        mixed.g() as f32 / 255.,
+                        mixed.b() as f32 / 255.,
+                        alpha,
+                    )
+                }
+                None => shade(alpha),
+            };
+            let colors = [shade(0.10), tinted(0.30), tinted(0.80), shade(1.)];
+            let stops = [0., 0.45, 0.8, 1.];
+            let gradient = Gradient::new(
+                Colors::new(&colors, Some(&stops[..]), TileMode::Clamp, None),
+                Interpolation::default(),
+            );
+            let Some(shader) = shaders::linear_gradient(
+                (Point::new(0., 0.), Point::new(0., height)),
+                &gradient,
+                None,
+            ) else {
+                return;
+            };
+            let mut paint = Paint::default();
+            paint.set_shader(shader);
+            context
+                .canvas
+                .draw_rect(Rect::from_wh(width, height), &paint);
+        }))
+        .width(Size::fill())
+        .height(Size::px(hero_height()))
 }

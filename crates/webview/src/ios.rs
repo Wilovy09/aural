@@ -155,12 +155,12 @@ impl Window {
             let dismissed = dismissed.clone();
             let handler = RcBlock::new(move |_: NonNull<UIAction>| dismissed.set(true));
             let action = unsafe { UIAction::actionWithHandler(RcBlock::as_ptr(&handler), mtm) };
-            let button = UIButton::buttonWithType_primaryAction(
-                UIButtonType::System,
-                Some(&action),
-                mtm,
+            let button =
+                UIButton::buttonWithType_primaryAction(UIButtonType::System, Some(&action), mtm);
+            button.setTitle_forState(
+                Some(&NSString::from_str("Cancelar")),
+                UIControlState::Normal,
             );
-            button.setTitle_forState(Some(&NSString::from_str("Cancelar")), UIControlState::Normal);
             button.setTitleColor_forState(Some(&gray(0.98)), UIControlState::Normal);
             button.setFrame(CGRect::new(CGPoint::new(8., 0.), CGSize::new(96., BAR)));
             button
