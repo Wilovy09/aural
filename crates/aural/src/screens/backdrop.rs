@@ -108,19 +108,20 @@ impl Component for Backdrop {
             .height(Size::px(height))
             .background(ui::color::BACKGROUND)
             .child(
-                rect().background(RenderCallback::new(move |context| {
-                    let size = (context.size.width, context.size.height);
-                    let layers = [(previous.as_ref(), 1.), (current.as_ref(), fade)];
-                    for (base, alpha) in layers {
-                        if let Some(base) = base
-                            && alpha > 0.
-                        {
-                            draw(context.canvas, base, size, time, alpha);
+                rect()
+                    .background(RenderCallback::new(move |context| {
+                        let size = (context.size.width, context.size.height);
+                        let layers = [(previous.as_ref(), 1.), (current.as_ref(), fade)];
+                        for (base, alpha) in layers {
+                            if let Some(base) = base
+                                && alpha > 0.
+                            {
+                                draw(context.canvas, base, size, time, alpha);
+                            }
                         }
-                    }
-                }))
-                .key(frame)
-                .expanded(),
+                    }))
+                    .key(frame)
+                    .expanded(),
             )
     }
 }
