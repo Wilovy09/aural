@@ -146,41 +146,42 @@ impl Component for Spectrum {
             false => 0.,
         };
         let tint = self.tint;
-        rect().background(RenderCallback::new(move |context| {
-            use skia_safe::{Paint, Rect};
-            let side = context.size.width.min(context.size.height);
-            let scale = side / WIDTH.max(HEIGHT);
-            // The canvas draws from its own top-left corner.
-            let (left, top) = (0., 0.);
-            let place = |x: f32, y: f32| {
-                (
-                    left + (x - LEFT) * scale + (side - WIDTH * scale) / 2.,
-                    top + (y - TOP) * scale,
-                )
-            };
-            let mut paint = Paint::default();
-            paint.set_anti_alias(true);
-            paint.set_color(skia_safe::Color::from_argb(
-                tint.a(),
-                tint.r(),
-                tint.g(),
-                tint.b(),
-            ));
-            for bar in &BARS {
-                let tall = bar.height * at(bar.scale, time);
-                let (x0, y0) = place(bar.x - BAR / 2., FLOOR - tall);
-                let (x1, y1) = place(bar.x + BAR / 2., FLOOR);
-                context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
-                let cap = at(bar.cap, time);
-                let (x0, y0) = place(bar.x - BAR / 2., cap - CAP);
-                let (x1, y1) = place(bar.x + BAR / 2., cap);
-                context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
-            }
-        }))
-        // A new key every frame, so the canvas is drawn again as the clock moves.
-        .key((time * 1000.) as u64)
-        .width(Size::px(self.size))
-        .height(Size::px(self.size))
+        rect()
+            .background(RenderCallback::new(move |context| {
+                use skia_safe::{Paint, Rect};
+                let side = context.size.width.min(context.size.height);
+                let scale = side / WIDTH.max(HEIGHT);
+                // The canvas draws from its own top-left corner.
+                let (left, top) = (0., 0.);
+                let place = |x: f32, y: f32| {
+                    (
+                        left + (x - LEFT) * scale + (side - WIDTH * scale) / 2.,
+                        top + (y - TOP) * scale,
+                    )
+                };
+                let mut paint = Paint::default();
+                paint.set_anti_alias(true);
+                paint.set_color(skia_safe::Color::from_argb(
+                    tint.a(),
+                    tint.r(),
+                    tint.g(),
+                    tint.b(),
+                ));
+                for bar in &BARS {
+                    let tall = bar.height * at(bar.scale, time);
+                    let (x0, y0) = place(bar.x - BAR / 2., FLOOR - tall);
+                    let (x1, y1) = place(bar.x + BAR / 2., FLOOR);
+                    context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
+                    let cap = at(bar.cap, time);
+                    let (x0, y0) = place(bar.x - BAR / 2., cap - CAP);
+                    let (x1, y1) = place(bar.x + BAR / 2., cap);
+                    context.canvas.draw_rect(Rect::new(x0, y0, x1, y1), &paint);
+                }
+            }))
+            // A new key every frame, so the canvas is drawn again as the clock moves.
+            .key((time * 1000.) as u64)
+            .width(Size::px(self.size))
+            .height(Size::px(self.size))
     }
 }
 
