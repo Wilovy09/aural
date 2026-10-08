@@ -138,6 +138,72 @@ struct Loaded {
     gain: f32,
 }
 
+/// The audio output: the mixer the songs play into and the stream that plays it.
+struct Output {
+    mixer: rodio::mixer::Mixer,
+    #[cfg(not(target_os = "ios"))]
+    _stream: rodio::OutputStream,
+    /// Held here rather than in rodio's `OutputStream`, so it can be started again: iOS
+    /// stops it for a call, Siri or an alarm, and nothing would play after.
+    #[cfg(target_os = "ios")]
+    stream: rodio::cpal::Stream,
+}
+
+impl Output {
+    #[cfg(not(target_os = "ios"))]
+    fn open() -> Result<Self> {
+        let stream =
+            rodio::OutputStreamBuilder::open_default_stream().context("no audio output")?;
+        Ok(Self {
+            mixer: stream.mixer().clone(),
+            _stream: stream,
+        })
+    }
+
+    #[cfg(target_os = "ios")]
+    fn open() -> Result<Self> {
+        use rodio::cpal::traits::{DeviceTrait as _, HostTrait as _, StreamTrait as _};
+
+        let device = rodio::cpal::default_host()
+            .default_output_device()
+            .context("no audio output")?;
+        let config = device
+            .default_output_config()
+            .context("no audio output config")?;
+        anyhow::ensure!(
+            config.sample_format() == rodio::cpal::SampleFormat::F32,
+            "unexpected audio format {}",
+            config.sample_format()
+        );
+        let (mixer, mut samples) = rodio::mixer::mixer(config.channels(), config.sample_rate().0);
+        let stream = device
+            .build_output_stream::<f32, _, _>(
+                &config.into(),
+                move |data, _| {
+                    data.iter_mut()
+                        .for_each(|d| *d = samples.next().unwrap_or(0.))
+                },
+                |error| log::warn!("engine: audio output: {error}"),
+                None,
+            )
+            .context("cannot open the audio output")?;
+        stream.play().context("cannot start the audio output")?;
+        Ok(Self { mixer, stream })
+    }
+
+    /// Starts the stream again once an interruption is over.
+    #[cfg(target_os = "ios")]
+    fn resume_if_interrupted(&self) {
+        use rodio::cpal::traits::StreamTrait as _;
+
+        if crate::platform::interruption_ended()
+            && let Err(error) = self.stream.play()
+        {
+            log::warn!("engine: cannot restart the audio output: {error}");
+        }
+    }
+}
+
 /// The song on the sink and, once fetched, the one queued behind it.
 struct Playing {
     sink: rodio::Sink,
@@ -157,7 +223,7 @@ fn run(
     inbox: Receiver<Command>,
     updates: &UnboundedSender<Update>,
 ) -> Result<()> {
-    let output = rodio::OutputStreamBuilder::open_default_stream().context("no audio output")?;
+    let output = Output::open()?;
     let say = |update: Update| {
         // Android's controls follow from here, so they stay right in the background.
         crate::media::observe(&update);
@@ -176,6 +242,8 @@ fn run(
     let mut added = 0usize;
 
     loop {
+        #[cfg(target_os = "ios")]
+        output.resume_if_interrupted();
         let command = match inbox.recv_timeout(TICK) {
             Ok(command) => Some(command),
             Err(RecvTimeoutError::Timeout) => None,
@@ -483,7 +551,7 @@ fn elapsed(playing: &Playing) -> Duration {
 
 /// Loads `song` and starts it on a fresh sink, telling the UI either way.
 fn begin(
-    output: &rodio::OutputStream,
+    output: &Output,
     api: &Arc<YtMusic>,
     song: &Song,
     say: &dyn Fn(Update),
@@ -558,9 +626,9 @@ fn decoder(loaded: &Loaded) -> Result<rodio::Decoder<crate::stream::Reader>> {
 }
 
 /// Starts `loaded` on a new sink.
-fn start(output: &rodio::OutputStream, loaded: Loaded) -> Result<Playing> {
+fn start(output: &Output, loaded: Loaded) -> Result<Playing> {
     let source = decoder(&loaded)?;
-    let sink = rodio::Sink::connect_new(output.mixer());
+    let sink = rodio::Sink::connect_new(&output.mixer);
     sink.append(source.amplify(loaded.gain));
     Ok(Playing {
         sink,
