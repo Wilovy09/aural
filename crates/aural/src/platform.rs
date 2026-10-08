@@ -71,22 +71,99 @@ pub fn insets() -> (f32, f32) {
     ((insets.top * scale) as f32, (insets.bottom * scale) as f32)
 }
 
+/// Set once a call, Siri or an alarm that took the audio over has ended.
+#[cfg(target_os = "ios")]
+static INTERRUPTION_ENDED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether an interruption ended since last asked: iOS stopped the audio output for it, and
+/// the engine starts it again.
+#[cfg(target_os = "ios")]
+pub fn interruption_ended() -> bool {
+    INTERRUPTION_ENDED.swap(false, std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Makes Aural a music player to iOS: the `Playback` category plays with the silent switch on
-/// and keeps playing in the background, where the default `SoloAmbient` would mute it.
+/// and keeps playing in the background, where the default `SoloAmbient` would mute it. Also
+/// follows interruptions, which stop the audio output: the music pauses when one begins, and
+/// plays on after it when iOS says so.
 #[cfg(target_os = "ios")]
 pub fn audio_session() {
-    use objc2_avf_audio::{AVAudioSession, AVAudioSessionCategoryPlayback};
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2_avf_audio::{
+        AVAudioSession, AVAudioSessionCategoryPlayback, AVAudioSessionInterruptionNotification,
+        AVAudioSessionInterruptionOptionKey, AVAudioSessionInterruptionTypeKey,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSNumber, NSString};
+
+    /// `AVAudioSessionInterruptionType`'s and `AVAudioSessionInterruptionOptions`' values.
+    const BEGAN: usize = 1;
+    const ENDED: usize = 0;
+    const SHOULD_RESUME: usize = 1;
+
     // SAFETY: the shared session is a process-wide singleton safe to use from any thread.
-    unsafe {
-        let session = AVAudioSession::sharedInstance();
-        let Some(playback) = AVAudioSessionCategoryPlayback else {
-            return;
-        };
-        if let Err(error) = session.setCategory_error(playback) {
+    let session = unsafe { AVAudioSession::sharedInstance() };
+    // SAFETY: the categories are constants AVFAudio defines.
+    if let Some(playback) = unsafe { AVAudioSessionCategoryPlayback } {
+        // SAFETY: as above.
+        if let Err(error) = unsafe { session.setCategory_error(playback) } {
             log::warn!("platform: cannot set the audio category: {error:?}");
         }
-        if let Err(error) = session.setActive_error(true) {
-            log::warn!("platform: cannot start the audio session: {error:?}");
+    }
+    activate();
+
+    let observer = RcBlock::new(|notification: NonNull<NSNotification>| {
+        // SAFETY: the notification center hands a valid notification for the call.
+        let Some(info) = unsafe { notification.as_ref() }.userInfo() else {
+            return;
+        };
+        let number = |key: Option<&NSString>| {
+            info.objectForKey(key?)
+                .and_then(|value| value.downcast::<NSNumber>().ok())
+                .map(|number| number.unsignedIntegerValue())
+        };
+        // SAFETY: the keys are constants AVFAudio defines.
+        let (kind, options) = unsafe {
+            (
+                number(AVAudioSessionInterruptionTypeKey),
+                number(AVAudioSessionInterruptionOptionKey).unwrap_or(0),
+            )
+        };
+        match kind {
+            Some(BEGAN) => crate::media::press("pause"),
+            Some(ENDED) => {
+                activate();
+                INTERRUPTION_ENDED.store(true, std::sync::atomic::Ordering::SeqCst);
+                if options & SHOULD_RESUME != 0 {
+                    crate::media::press("play");
+                }
+            }
+            _ => {}
         }
+    });
+    // SAFETY: the block only touches thread-safe state, and the observer lives as long as
+    // the app, as it is never removed.
+    unsafe {
+        let observer = NSNotificationCenter::defaultCenter()
+            .addObserverForName_object_queue_usingBlock(
+                AVAudioSessionInterruptionNotification,
+                Some(&session),
+                None,
+                &observer,
+            );
+        std::mem::forget(observer);
+    }
+}
+
+/// Makes the audio session active, which an interruption undoes.
+#[cfg(target_os = "ios")]
+fn activate() {
+    // SAFETY: the shared session is a process-wide singleton safe to use from any thread.
+    if let Err(error) =
+        unsafe { objc2_avf_audio::AVAudioSession::sharedInstance().setActive_error(true) }
+    {
+        log::warn!("platform: cannot start the audio session: {error:?}");
     }
 }
