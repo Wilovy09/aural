@@ -7,6 +7,8 @@
 #   ./scripts/ios.sh device --release  # iPhone over the network: signs with the profile Xcode
 #                                     # made for the bundle id and installs with devicectl
 #
+#   ./scripts/ios.sh ipa               # build/Aural.ipa for AltStore, which signs it itself
+#
 #   AURAL_BUNDLE_ID   bundle id (default dev.aural.app; a free Apple ID needs one of its own)
 #   AURAL_DEVICE      which iPhone, as `xcrun devicectl list devices` names it
 set -euo pipefail
@@ -23,10 +25,18 @@ done
 case "$WHERE" in
   sim) TARGET=aarch64-apple-ios-sim ;;
   device) TARGET=aarch64-apple-ios ;;
-  *) echo "usage: $0 [sim|device] [--release]" >&2; exit 1 ;;
+  ipa) TARGET=aarch64-apple-ios; PROFILE=release; CARGO_FLAGS=(--release) ;;
+  *) echo "usage: $0 [sim|device|ipa] [--release]" >&2; exit 1 ;;
 esac
 
+# The workspace's version, and the commit count as the build number, which only ever grows.
+VERSION="$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -1)"
+BUILD="${AURAL_BUILD:-$(git rev-list --count HEAD)}"
+
 BUNDLE_ID="${AURAL_BUNDLE_ID:-dev.aural.app}"
+# The oldest iOS Aural runs on. The linker defaults to iOS 10, older than what Skia and QuickJS
+# are built for (QuickJS needs `___chkstk_darwin`, which arrived in iOS 13).
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
 cargo build -p aural --bin aural --target "$TARGET" ${CARGO_FLAGS[@]+"${CARGO_FLAGS[@]}"}
 
 APP=build/Aural.app
@@ -45,11 +55,11 @@ cat > "$APP/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Aural</string>
   <key>CFBundleDisplayName</key><string>Aural</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleIconFiles</key><array><string>AppIcon.png</string></array>
   <key>LSRequiresIPhoneOS</key><true/>
-  <key>MinimumOSVersion</key><string>15.0</string>
+  <key>MinimumOSVersion</key><string>$IPHONEOS_DEPLOYMENT_TARGET</string>
   <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
   <key>UILaunchScreen</key><dict/>
   <key>UIRequiresFullScreen</key><true/>
@@ -68,18 +78,32 @@ cat > "$APP/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [ "$WHERE" = ipa ]; then
+  # Signed ad hoc only so the bundle is well formed; AltStore signs it again with the user's
+  # Apple ID when it installs it.
+  codesign --force --sign - --timestamp=none "$APP"
+  rm -rf build/ipa build/Aural.ipa
+  mkdir -p build/ipa/Payload
+  cp -R "$APP" build/ipa/Payload/
+  (cd build/ipa && zip -qry ../Aural.ipa Payload)
+  rm -rf build/ipa
+  echo "Packaged build/Aural.ipa ($VERSION, build $BUILD)"
+  exit 0
+fi
+
 if [ "$WHERE" = device ]; then
   # The profile Xcode made for $BUNDLE_ID (or a wildcard one), the newest first.
   PROFILE_FILE=""
   PLIST_TMP="$(mktemp -t aural-profile)"
-  for file in $(ls -t "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision \
-                      "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision 2>/dev/null); do
+  # Read line by line: the folders' names have spaces in them.
+  while IFS= read -r file; do
     security cms -D -i "$file" > "$PLIST_TMP" 2>/dev/null || continue
     app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PLIST_TMP" 2>/dev/null || true)"
     case "$app_id" in
       *".$BUNDLE_ID" | *".*") PROFILE_FILE="$file"; break ;;
     esac
-  done
+  done < <(ls -t "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision \
+                 "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision 2>/dev/null)
   if [ -z "$PROFILE_FILE" ]; then
     echo "No provisioning profile for $BUNDLE_ID. Create an iOS app in Xcode with that bundle id," >&2
     echo "pick your team and run it once on the iPhone, then run this again." >&2
