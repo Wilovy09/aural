@@ -1,7 +1,8 @@
-//! Android's media controls: the player in quick settings, on the lock screen and in the
-//! notification shade, through `dev.aural.app.Media` (see `android/java`). It follows the
-//! engine's updates on the engine's own thread, so it stays right while the app is in the
-//! background, and hands the buttons pressed there back to the engine.
+//! The system's media controls. On Android, the player in quick settings, on the lock screen
+//! and in the notification shade, through `dev.aural.app.Media` (see `android/java`); on iOS,
+//! Now Playing, in Control Center and on the lock screen. It follows the engine's updates on
+//! the engine's own thread, so it stays right while the app is in the background, and hands
+//! the buttons pressed there back to the engine.
 //!
 //! Elsewhere it does nothing yet.
 
@@ -12,7 +13,7 @@ use crate::engine::{Command, Engine, Update};
 use crate::library::{self, Song};
 use crate::{artwork, images, runtime};
 
-/// The side of the cover handed to Android.
+/// The side of the cover handed to the system.
 const ART_EDGE: u32 = 512;
 /// How far the position may drift from where it should be before Android is told again.
 /// Android moves the bar on its own from the last position and the play state.
@@ -20,7 +21,7 @@ const DRIFT: Duration = Duration::from_millis(1500);
 /// How often the buttons pressed are read.
 const LISTEN: Duration = Duration::from_millis(250);
 
-/// What Android was last shown.
+/// What the system was last shown.
 struct Shown {
     song: Song,
     playing: bool,
@@ -182,10 +183,12 @@ fn cover(song: Song) {
     });
 }
 
-/// Reads the buttons pressed in Android's controls and sends them to `engine`, on a thread of
-/// its own so they work with the app in the background.
+/// Reads the buttons pressed in the system's controls and sends them to `engine`, on a thread
+/// of its own so they work with the app in the background.
 pub fn listen(engine: Engine) {
-    #[cfg(target_os = "android")]
+    #[cfg(target_os = "ios")]
+    buttons();
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(LISTEN);
@@ -196,11 +199,11 @@ pub fn listen(engine: Engine) {
             }
         }
     });
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _ = (engine, LISTEN);
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
 /// The engine command a button stands for. Play and pause only toggle when they change
 /// something, since a headset may send either whatever the state.
 fn command(pressed: &str) -> Option<Command> {
@@ -212,6 +215,7 @@ fn command(pressed: &str) -> Option<Command> {
     match pressed {
         "play" if !playing => Some(Command::Toggle),
         "pause" if playing => Some(Command::Toggle),
+        "toggle" => Some(Command::Toggle),
         "next" => Some(Command::Next),
         "previous" => Some(Command::Previous),
         seek => seek
@@ -297,8 +301,164 @@ fn take() -> Option<String> {
     })
 }
 
-#[cfg(not(target_os = "android"))]
+/// The buttons pressed in Now Playing, waiting for `listen` to read them.
+#[cfg(target_os = "ios")]
+static PRESSED: Mutex<std::collections::VecDeque<String>> =
+    Mutex::new(std::collections::VecDeque::new());
+
+/// Queues a button press for the engine, as Now Playing and audio interruptions send them.
+#[cfg(target_os = "ios")]
+pub fn press(button: &str) {
+    if let Ok(mut pressed) = PRESSED.lock() {
+        pressed.push_back(button.to_string());
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn take() -> Option<String> {
+    PRESSED.lock().ok()?.pop_front()
+}
+
+/// Shows Now Playing's buttons, each queuing its press.
+#[cfg(target_os = "ios")]
+fn buttons() {
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2_media_player::{
+        MPChangePlaybackPositionCommandEvent, MPRemoteCommand, MPRemoteCommandCenter,
+        MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
+    };
+
+    let on = |command: &MPRemoteCommand, handler: RcBlock<_>| {
+        // SAFETY: the command center keeps the handler for as long as the app runs.
+        unsafe {
+            command.setEnabled(true);
+            let _ = command.addTargetWithHandler(&handler);
+        }
+    };
+    let button = |command: Retained<MPRemoteCommand>, name: &'static str| {
+        on(
+            &command,
+            RcBlock::new(move |_: NonNull<MPRemoteCommandEvent>| {
+                press(name);
+                MPRemoteCommandHandlerStatus::Success
+            }),
+        );
+    };
+
+    // SAFETY: the shared command center is a process-wide singleton.
+    let center = unsafe { MPRemoteCommandCenter::sharedCommandCenter() };
+    // SAFETY: as above.
+    unsafe {
+        button(center.playCommand(), "play");
+        button(center.pauseCommand(), "pause");
+        button(center.togglePlayPauseCommand(), "toggle");
+        button(center.nextTrackCommand(), "next");
+        button(center.previousTrackCommand(), "previous");
+        on(
+            &center.changePlaybackPositionCommand(),
+            RcBlock::new(|event: NonNull<MPRemoteCommandEvent>| {
+                // SAFETY: the position command hands its own kind of event.
+                let event = event.cast::<MPChangePlaybackPositionCommandEvent>();
+                let seconds = event.as_ref().positionTime();
+                press(&format!("seek:{}", (seconds.max(0.) * 1000.) as u64));
+                MPRemoteCommandHandlerStatus::Success
+            }),
+        );
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn publish(shown: Option<&Shown>) {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSNumber, NSString};
+    use objc2_media_player::{
+        MPMediaItemPropertyArtist, MPMediaItemPropertyArtwork, MPMediaItemPropertyPlaybackDuration,
+        MPMediaItemPropertyTitle, MPNowPlayingInfoCenter,
+        MPNowPlayingInfoPropertyElapsedPlaybackTime, MPNowPlayingInfoPropertyPlaybackRate,
+    };
+
+    let Some(shown) = shown else {
+        return;
+    };
+    let seconds = |duration: Duration| NSNumber::numberWithDouble(duration.as_secs_f64()).into();
+    // SAFETY: the keys are constants MediaPlayer defines.
+    let mut info: Vec<(&NSString, Retained<AnyObject>)> = unsafe {
+        vec![
+            (
+                MPMediaItemPropertyTitle,
+                NSString::from_str(&shown.song.title).into(),
+            ),
+            (
+                MPMediaItemPropertyArtist,
+                NSString::from_str(&shown.song.artist).into(),
+            ),
+            (
+                MPNowPlayingInfoPropertyElapsedPlaybackTime,
+                seconds(expected(shown)),
+            ),
+            (
+                MPNowPlayingInfoPropertyPlaybackRate,
+                NSNumber::numberWithDouble(if shown.playing { 1. } else { 0. }).into(),
+            ),
+        ]
+    };
+    if let Some(total) = shown.total {
+        // SAFETY: as above.
+        info.push((
+            unsafe { MPMediaItemPropertyPlaybackDuration },
+            seconds(total),
+        ));
+    }
+    if let Some(artwork) = shown.art.as_deref().and_then(artwork) {
+        // SAFETY: as above.
+        info.push((unsafe { MPMediaItemPropertyArtwork }, artwork));
+    }
+    let (keys, values): (Vec<_>, Vec<_>) = info.into_iter().unzip();
+    let info = NSDictionary::from_retained_objects(&keys, &values);
+    // SAFETY: the default center takes a dictionary of the properties above, from any thread.
+    unsafe { MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(Some(&info)) };
+}
+
+/// The cover as Now Playing takes it: an `MPMediaItemArtwork` handing out a `UIImage`.
+#[cfg(target_os = "ios")]
+fn artwork(bytes: &[u8]) -> Option<objc2::rc::Retained<objc2::runtime::AnyObject>> {
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::{AnyThread as _, class, msg_send};
+    use objc2_core_foundation::CGSize;
+    use objc2_foundation::NSData;
+    use objc2_media_player::MPMediaItemArtwork;
+
+    let data = NSData::with_bytes(bytes);
+    // SAFETY: `imageWithData:` takes any data and returns nil for what is not an image.
+    let image: Option<Retained<AnyObject>> =
+        unsafe { msg_send![class!(UIImage), imageWithData: &*data] };
+    let image = image?;
+    // SAFETY: a `UIImage` has a size.
+    let size: CGSize = unsafe { msg_send![&*image, size] };
+    let handler = RcBlock::new(move |_: CGSize| NonNull::from(&*image));
+    // SAFETY: the handler returns a `UIImage` that lives as long as the artwork holds it.
+    let artwork: Retained<MPMediaItemArtwork> = unsafe {
+        msg_send![MPMediaItemArtwork::alloc(), initWithBoundsSize: size, requestHandler: &*handler]
+    };
+    Some(artwork.into())
+}
+
+#[cfg(target_os = "ios")]
+fn stop() {
+    // SAFETY: the default center takes no info at all, from any thread.
+    unsafe { objc2_media_player::MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(None) };
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn publish(_shown: Option<&Shown>) {}
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn stop() {}
