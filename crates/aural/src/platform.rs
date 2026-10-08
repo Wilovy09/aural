@@ -60,11 +60,33 @@ pub fn insets() -> (f32, f32) {
     };
     let application = UIApplication::sharedApplication(mtm);
     #[allow(deprecated)]
-    let Some(window) = application.keyWindow().or_else(|| application.windows().firstObject())
+    let Some(window) = application
+        .keyWindow()
+        .or_else(|| application.windows().firstObject())
     else {
         return (0., 0.);
     };
     let insets = window.safeAreaInsets();
     let scale = window.screen().scale();
     ((insets.top * scale) as f32, (insets.bottom * scale) as f32)
+}
+
+/// Makes Aural a music player to iOS: the `Playback` category plays with the silent switch on
+/// and keeps playing in the background, where the default `SoloAmbient` would mute it.
+#[cfg(target_os = "ios")]
+pub fn audio_session() {
+    use objc2_avf_audio::{AVAudioSession, AVAudioSessionCategoryPlayback};
+    // SAFETY: the shared session is a process-wide singleton safe to use from any thread.
+    unsafe {
+        let session = AVAudioSession::sharedInstance();
+        let Some(playback) = AVAudioSessionCategoryPlayback else {
+            return;
+        };
+        if let Err(error) = session.setCategory_error(playback) {
+            log::warn!("platform: cannot set the audio category: {error:?}");
+        }
+        if let Err(error) = session.setActive_error(true) {
+            log::warn!("platform: cannot start the audio session: {error:?}");
+        }
+    }
 }
