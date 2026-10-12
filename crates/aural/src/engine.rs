@@ -228,6 +228,8 @@ fn run(
         // Android's controls follow from here, so they stay right in the background.
         crate::media::observe(&update);
         crate::connect::observe(&update);
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        crate::discord::observe(&update);
         let _ = updates.send(update);
     };
 

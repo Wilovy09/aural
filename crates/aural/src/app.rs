@@ -246,11 +246,14 @@ pub fn app() -> impl IntoElement {
         ui::set_text_scale(settings.text.text());
         // The app speaks Spanish, so lyrics are translated into Spanish.
         lyrics::set_language("es");
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        crate::discord::enable(settings.discord);
         AppState {
             motion: settings.motion,
             text: settings.text,
             interface: settings.interface,
             translate: settings.translate,
+            discord: settings.discord,
             ..AppState::default()
         }
     });
@@ -604,6 +607,14 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             state.motion = !state.motion;
             save_settings(&state);
         }
+        Action::ToggleDiscord => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Navigation);
+            state.discord = !state.discord;
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            crate::discord::enable(state.discord);
+            save_settings(&state);
+        }
         Action::SetText(scale) => {
             let mut station = station;
             ui::set_text_scale(scale.text());
@@ -769,6 +780,7 @@ fn save_settings(state: &AppState) {
         text: state.text,
         interface: state.interface,
         translate: state.translate,
+        discord: state.discord,
     });
 }
 

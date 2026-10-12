@@ -5,6 +5,8 @@ mod artwork;
 mod chrome;
 mod connect;
 mod cover;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod discord;
 mod engine;
 mod images;
 mod library;

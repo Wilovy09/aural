@@ -26,6 +26,7 @@ pub enum Action {
     SignIn,
     SignOut,
     ToggleMotion,
+    ToggleDiscord,
     ToggleShuffle,
     CycleRepeat,
     /// Give the search field the keyboard.
@@ -374,6 +375,7 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
             None => Action::None,
         },
         (Spot::Action(1), Page::Account) => Action::ToggleMotion,
+        (Spot::Action(3), Page::Account) => Action::ToggleDiscord,
         (Spot::Action(_), Page::Account) => match state.auth {
             crate::state::Auth::SignedIn(_) => Action::SignOut,
             _ => Action::SignIn,
@@ -481,8 +483,12 @@ fn home(state: &mut AppState, press: Press) -> Action {
     Action::None
 }
 
-/// The account page, a column of settings top to bottom: animated covers, text size, interface
-/// size, devices, sign out. The two sizes are rows of options, left and right along them.
+/// Whether the account page has the Discord activity row: only computers run Discord's app.
+pub const DISCORD: bool = cfg!(not(any(target_os = "android", target_os = "ios")));
+
+/// The account page, a column of settings top to bottom: animated covers, the Discord activity
+/// on computers, text size, interface size, devices, sign out. The two sizes are rows of
+/// options, left and right along them.
 fn account(state: &mut AppState, press: Press) -> Action {
     use crate::settings::Scale;
     let sizes = Scale::ALL.len();
@@ -490,7 +496,11 @@ fn account(state: &mut AppState, press: Press) -> Action {
     let (text, interface) = (chosen(state.text), chosen(state.interface));
     let spot = state.focus.content;
     let next = match (spot, press) {
+        (Spot::Action(1), Press::Down) if DISCORD => Spot::Action(3),
         (Spot::Action(1), Press::Down) => Spot::Cell(0, text),
+        (Spot::Action(3), Press::Up) => Spot::Action(1),
+        (Spot::Action(3), Press::Down) => Spot::Cell(0, text),
+        (Spot::Cell(0, _), Press::Up) if DISCORD => Spot::Action(3),
         (Spot::Cell(0, _), Press::Up) => Spot::Action(1),
         (Spot::Cell(0, _), Press::Down) => Spot::Cell(1, interface),
         (Spot::Cell(1, _), Press::Up) => Spot::Cell(0, text),
@@ -503,6 +513,7 @@ fn account(state: &mut AppState, press: Press) -> Action {
         (Spot::Cell(0, at), Press::Ok) => return Action::SetText(Scale::ALL[at]),
         (Spot::Cell(_, at), Press::Ok) => return Action::SetInterface(Scale::ALL[at]),
         (Spot::Action(1), Press::Ok) => return Action::ToggleMotion,
+        (Spot::Action(3), Press::Ok) => return Action::ToggleDiscord,
         (Spot::Action(2), Press::Ok) => {
             open_devices(state);
             return Action::None;
