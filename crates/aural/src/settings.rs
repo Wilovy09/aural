@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::platform;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Show albums' animated covers in the fullscreen player (opt-in).
@@ -15,6 +15,20 @@ pub struct Settings {
     pub interface: Scale,
     /// Show the lyrics' translation under each line.
     pub translate: bool,
+    /// Show the song playing as the activity on Discord (desktop only).
+    pub discord: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            motion: false,
+            text: Scale::default(),
+            interface: Scale::default(),
+            translate: false,
+            discord: true,
+        }
+    }
 }
 
 /// A size step, for text or the whole interface.
