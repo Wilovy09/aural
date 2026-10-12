@@ -20,8 +20,9 @@ impl Component for Account {
         let light = now.read().now.light.unwrap_or(color::FOCUS_ON_PRIMARY);
         let state = navigation.read();
         let focus = state.focus;
-        let (motion, text_size, interface, confirming) = (
+        let (motion, discord, text_size, interface, confirming) = (
             state.motion,
+            state.discord,
             state.text,
             state.interface,
             state.confirm_sign_out,
@@ -72,18 +73,35 @@ impl Component for Account {
                     )
                     .child(group(
                         "Reproducción",
-                        vec![
-                            row(
-                                Icon::Motion,
-                                "Portadas animadas",
-                                "Se ven en el reproductor a pantalla completa",
-                                switch(motion, light),
-                                on(Spot::Action(1)),
-                                Target::Content(Spot::Action(1)),
-                                light,
-                            )
-                            .into_element(),
-                        ],
+                        [
+                            Some(
+                                row(
+                                    Icon::Motion,
+                                    "Portadas animadas",
+                                    "Se ven en el reproductor a pantalla completa",
+                                    switch(motion, light),
+                                    on(Spot::Action(1)),
+                                    Target::Content(Spot::Action(1)),
+                                    light,
+                                )
+                                .into_element(),
+                            ),
+                            crate::nav::DISCORD.then(|| {
+                                row(
+                                    Icon::User,
+                                    "Actividad en Discord",
+                                    "Muestra en tu perfil la canción que suena",
+                                    switch(discord, light),
+                                    on(Spot::Action(3)),
+                                    Target::Content(Spot::Action(3)),
+                                    light,
+                                )
+                                .into_element()
+                            }),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect(),
                     ))
                     .child(group(
                         "Apariencia",

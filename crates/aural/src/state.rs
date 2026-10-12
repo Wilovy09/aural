@@ -267,6 +267,8 @@ pub struct AppState {
     pub interface: crate::settings::Scale,
     /// Whether the lyrics show their translation under each line.
     pub translate: bool,
+    /// Whether Discord shows the song playing as the activity (desktop only).
+    pub discord: bool,
     /// Sign out was pressed once and waits for a second OK.
     pub confirm_sign_out: bool,
     pub now: Now,
