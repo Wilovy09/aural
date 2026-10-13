@@ -16,7 +16,7 @@ use ndk::media::media_codec::{
 use ndk::media::media_format::MediaFormat;
 use ndk_sys as ffi;
 
-use crate::Frame;
+use crate::{ChannelOrder, Frame};
 
 /// How long one codec call waits for a buffer before the loop moves on.
 const WAIT: Duration = Duration::from_millis(5);
@@ -206,7 +206,8 @@ fn convert(image: &Image, pts: Duration) -> Result<Frame> {
     Ok(Frame {
         width: width as u32,
         height: height as u32,
-        rgba,
+        order: ChannelOrder::Rgba,
+        pixels: rgba,
         pts,
     })
 }

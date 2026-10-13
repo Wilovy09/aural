@@ -11,11 +11,19 @@ use std::time::Duration;
 
 pub use lookup::{Loop, MotionArt, MotionQuery, MotionSearch};
 
-/// One decoded frame, ready to draw.
+/// The byte order of a frame's 8-bit channels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChannelOrder {
+    Rgba,
+    Bgra,
+}
+
+/// One decoded frame, ready to draw: tightly packed 4-byte pixels in `order`.
 pub struct Frame {
     pub width: u32,
     pub height: u32,
-    pub rgba: Vec<u8>,
+    pub order: ChannelOrder,
+    pub pixels: Vec<u8>,
     pub pts: Duration,
 }
 

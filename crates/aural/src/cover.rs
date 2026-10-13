@@ -2,13 +2,12 @@
 //! the Apple Music catalog, downloaded and decoded in hardware, replacing the still one.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
 use freya::engine::prelude::{
-    AlphaType, ClipOp, ColorType, FilterMode, ImageInfo, MipmapMode, Paint, SamplingOptions,
-    SkData, SkRRect, SkRect, raster_from_data,
+    AlphaType, ClipOp, ColorType, FilterMode, Image as SkImage, ImageInfo, MipmapMode, Paint,
+    SamplingOptions, SkData, SkRRect, SkRect, raster_from_data,
 };
 use freya::prelude::*;
 use tokio::sync::watch;
@@ -18,8 +17,9 @@ const EDGE: u32 = 486;
 /// How often the decode rate is reported.
 const RATE_EVERY: Duration = Duration::from_secs(5);
 
-/// The latest decoded frame, shared with the UI.
-pub type Latest = watch::Sender<Option<Arc<motion::Frame>>>;
+/// The latest decoded frame as a ready image, shared with the UI. Built once per video frame
+/// on the decoder thread so painting reuses it, and Skia its GPU texture, until the next one.
+pub type Latest = watch::Sender<Option<SkImage>>;
 
 /// Looks up the motion artwork of `song`'s album and, when there is one, downloads and
 /// decodes it on its own thread. Steps go to `say`, frames to `frames`.
@@ -74,9 +74,28 @@ fn run(query: &motion::MotionQuery, say: &dyn Fn(String), frames: &Latest) -> Re
             count = 0;
             window = Instant::now();
         }
-        frames.send_replace(Some(Arc::new(frame)));
+        frames.send_replace(image(&frame));
         !frames.is_closed()
     })
+}
+
+/// Wraps a decoded frame's pixels in a raster image.
+fn image(frame: &motion::Frame) -> Option<SkImage> {
+    let color = match frame.order {
+        motion::ChannelOrder::Rgba => ColorType::RGBA8888,
+        motion::ChannelOrder::Bgra => ColorType::BGRA8888,
+    };
+    let info = ImageInfo::new(
+        (frame.width as i32, frame.height as i32),
+        color,
+        AlphaType::Opaque,
+        None,
+    );
+    raster_from_data(
+        &info,
+        SkData::new_copy(&frame.pixels),
+        frame.width as usize * 4,
+    )
 }
 
 /// Corner radius of the cover square.
@@ -94,7 +113,7 @@ fn folder() -> PathBuf {
 /// What the cover square shows: the latest motion frame.
 #[derive(Clone)]
 pub enum Art {
-    Motion(Arc<motion::Frame>),
+    Motion(SkImage),
 }
 
 /// The cover square with rounded corners. `number` changes with every motion frame so Freya
@@ -108,24 +127,7 @@ pub fn view(art: Option<Art>, number: u64, side: f32) -> impl IntoElement {
         .maybe_child(art.map(|art| {
             rect()
                 .background(RenderCallback::new(move |context| {
-                    let image = match &art {
-                        Art::Motion(frame) => {
-                            let info = ImageInfo::new(
-                                (frame.width as i32, frame.height as i32),
-                                ColorType::RGBA8888,
-                                AlphaType::Opaque,
-                                None,
-                            );
-                            raster_from_data(
-                                &info,
-                                SkData::new_copy(&frame.rgba),
-                                frame.width as usize * 4,
-                            )
-                        }
-                    };
-                    let Some(image) = image else {
-                        return;
-                    };
+                    let Art::Motion(image) = &art;
                     let target = SkRect::from_wh(context.size.width, context.size.height);
                     context.canvas.save();
                     context.canvas.clip_rrect(
@@ -134,7 +136,7 @@ pub fn view(art: Option<Art>, number: u64, side: f32) -> impl IntoElement {
                         true,
                     );
                     context.canvas.draw_image_rect_with_sampling_options(
-                        &image,
+                        image,
                         None,
                         target,
                         SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
