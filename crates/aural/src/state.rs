@@ -269,6 +269,8 @@ pub struct AppState {
     pub translate: bool,
     /// Whether Discord shows the song playing as the activity (desktop only).
     pub discord: bool,
+    /// How loud the music plays, apart from the device's volume.
+    pub volume: crate::engine::Volume,
     /// Sign out was pressed once and waits for a second OK.
     pub confirm_sign_out: bool,
     pub now: Now,
@@ -393,6 +395,7 @@ pub enum Channel {
     Search,
     Connect,
     Toast,
+    Volume,
 }
 
 impl RadioChannel<AppState> for Channel {}

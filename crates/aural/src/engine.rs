@@ -60,6 +60,62 @@ pub enum Command {
     Enqueue(Song),
     /// Take the song at this place out of the queue (not the one playing).
     Remove(usize),
+    /// Play the music this loud, apart from the device's own volume.
+    Volume(Volume),
+}
+
+/// How loud the music plays, apart from the device's volume: the level the listener set, and
+/// whether it is muted, which keeps the level to come back to.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Volume {
+    level: f32,
+    pub muted: bool,
+}
+
+impl Default for Volume {
+    fn default() -> Self {
+        Self {
+            level: 1.,
+            muted: false,
+        }
+    }
+}
+
+impl Volume {
+    /// The level, from 0 to 1, as the slider shows it: 0 while muted.
+    #[must_use]
+    pub fn shown(self) -> f32 {
+        match self.muted {
+            true => 0.,
+            false => self.level.clamp(0., 1.),
+        }
+    }
+
+    /// Set to `level` (clamped to 0..=1); moving the slider unmutes.
+    #[must_use]
+    pub fn at(self, level: f32) -> Self {
+        Self {
+            level: level.clamp(0., 1.),
+            muted: false,
+        }
+    }
+
+    /// Muted, or back to the level it had.
+    #[must_use]
+    pub fn toggled(self) -> Self {
+        Self {
+            muted: !self.muted,
+            ..self
+        }
+    }
+
+    /// The amplitude factor. Loudness is heard roughly as the cube root of amplitude, so a
+    /// cubic curve makes the slider's middle sound like half.
+    #[must_use]
+    fn gain(self) -> f32 {
+        self.shown().powi(3)
+    }
 }
 
 /// What happens when a song ends.
@@ -242,6 +298,7 @@ fn run(
     let mut repeat = Repeat::Off;
     // How many songs added with `Enqueue` wait right after the song playing.
     let mut added = 0usize;
+    let mut volume = Volume::default();
 
     loop {
         #[cfg(target_os = "ios")]
@@ -358,6 +415,12 @@ fn run(
                 }
             }
             Some(Command::Client(next)) => api = next,
+            Some(Command::Volume(next)) => {
+                volume = next;
+                if let Some(playing) = &current {
+                    playing.sink.set_volume(volume.gain());
+                }
+            }
             Some(Command::Repeat(mode)) => repeat = mode,
             Some(Command::Shuffle(on)) if on != shuffled => {
                 shuffled = on;
@@ -404,7 +467,7 @@ fn run(
             };
             index = at;
             say(Update::Queue(queue.clone(), index));
-            current = begin(&output, &api, &song, &say);
+            current = begin(&output, &api, &song, volume, &say);
             continue;
         }
 
@@ -418,7 +481,7 @@ fn run(
                     index = next;
                     added = added.saturating_sub(1);
                     say(Update::Queue(queue.clone(), index));
-                    current = begin(&output, &api, &song, &say);
+                    current = begin(&output, &api, &song, volume, &say);
                 }
                 None => say(Update::Stopped),
             }
@@ -556,11 +619,12 @@ fn begin(
     output: &Output,
     api: &Arc<YtMusic>,
     song: &Song,
+    volume: Volume,
     say: &dyn Fn(Update),
 ) -> Option<Playing> {
     say(Update::Loading(song.clone()));
-    let started =
-        runtime::block_on(load(api.clone(), song.clone())).and_then(|loaded| start(output, loaded));
+    let started = runtime::block_on(load(api.clone(), song.clone()))
+        .and_then(|loaded| start(output, loaded, volume));
     match started {
         Ok(playing) => {
             say(Update::Playing(true));
@@ -627,10 +691,11 @@ fn decoder(loaded: &Loaded) -> Result<rodio::Decoder<crate::stream::Reader>> {
     builder.build().context("cannot decode")
 }
 
-/// Starts `loaded` on a new sink.
-fn start(output: &Output, loaded: Loaded) -> Result<Playing> {
+/// Starts `loaded` on a new sink, `volume` loud.
+fn start(output: &Output, loaded: Loaded, volume: Volume) -> Result<Playing> {
     let source = decoder(&loaded)?;
     let sink = rodio::Sink::connect_new(&output.mixer);
+    sink.set_volume(volume.gain());
     sink.append(source.amplify(loaded.gain));
     Ok(Playing {
         sink,
@@ -640,6 +705,34 @@ fn start(output: &Output, loaded: Loaded) -> Result<Playing> {
         offset: Duration::ZERO,
         _streams: vec![loaded.stream],
     })
+}
+
+#[cfg(test)]
+mod volume {
+    use super::Volume;
+
+    #[test]
+    fn muting_keeps_the_level_to_come_back_to() {
+        let half = Volume::default().at(0.5);
+        let muted = half.toggled();
+        assert_eq!(muted.shown(), 0.);
+        assert_eq!(muted.gain(), 0.);
+        assert_eq!(muted.toggled(), half);
+    }
+
+    #[test]
+    fn moving_the_slider_unmutes_and_clamps() {
+        let muted = Volume::default().toggled();
+        assert_eq!(muted.at(0.3).shown(), 0.3);
+        assert_eq!(muted.at(1.7).shown(), 1.);
+        assert_eq!(muted.at(-1.).shown(), 0.);
+    }
+
+    #[test]
+    fn the_curve_is_cubic() {
+        assert_eq!(Volume::default().gain(), 1.);
+        assert_eq!(Volume::default().at(0.5).gain(), 0.125);
+    }
 }
 
 #[cfg(test)]

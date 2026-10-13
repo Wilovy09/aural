@@ -76,6 +76,18 @@ pub fn seek(to: std::time::Duration) {
     player(station, &engine, Command::Seek(to));
 }
 
+/// Plays the music `volume` loud, saving it when `save` (the slider let go, not mid-drag).
+pub fn set_volume(volume: crate::engine::Volume, save: bool) {
+    let Some((mut station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    station.write_channel(Channel::Volume).volume = volume;
+    engine.send(Command::Volume(volume));
+    if save {
+        save_settings(&station.peek());
+    }
+}
+
 /// Sends `command` to the player that plays: this device's engine, or the device this one
 /// controls through Aural Connect.
 fn player(station: Station, engine: &Engine, command: Command) {
@@ -95,7 +107,8 @@ fn player(station: Station, engine: &Engine, command: Command) {
         Command::Move { from, to } => crate::connect::Remote::Move { from, to },
         Command::Enqueue(song) => crate::connect::Remote::Enqueue { song },
         Command::Remove(at) => crate::connect::Remote::Remove { at },
-        Command::Client(_) => return engine.send(command),
+        // The volume is this device's: a controller's slider sets its own music's.
+        Command::Client(_) | Command::Volume(_) => return engine.send(command),
     };
     crate::connect::command(remote);
 }
@@ -254,6 +267,7 @@ pub fn app() -> impl IntoElement {
             interface: settings.interface,
             translate: settings.translate,
             discord: settings.discord,
+            volume: settings.volume,
             ..AppState::default()
         }
     });
@@ -427,13 +441,14 @@ impl Component for Glow {
 fn boot(station: Station) -> Engine {
     let (updates, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     let engine = Engine::start(client(), updates);
+    engine.send(Command::Volume(station.peek().volume));
     crate::media::listen(engine.clone());
 
     let (events, mut heard) = tokio::sync::mpsc::unbounded_channel();
     CONNECT.set(Some(events.clone()));
     crate::connect::start(events);
     let connect_engine = engine.clone();
-    spawn_forever(async move {
+    spawn_in_window(async move {
         while let Some(event) = heard.recv().await {
             follow(station, &connect_engine, event);
         }
@@ -448,7 +463,7 @@ fn boot(station: Station) -> Engine {
     }
 
     let mut playback = station;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         while let Some(update) = inbox.recv().await {
             apply(&mut playback, update);
         }
@@ -456,7 +471,7 @@ fn boot(station: Station) -> Engine {
 
     let engine_for_restore = engine.clone();
     let mut auth = station;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let restored = runtime::spawn(session::restore()).await.ok();
         match restored {
             Some(Ok(Some(session))) => {
@@ -522,7 +537,7 @@ fn apply(station: &mut Station, update: Update) {
 
 /// Works out the light `song`'s cover casts (Apple's cover first) and puts it in the state.
 fn light(mut station: Station, song: crate::library::Song) {
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let apple =
             crate::artwork::find(crate::artwork::Wanted::song(&song), library::THUMB_EDGE).await;
         let youtube = song
@@ -676,7 +691,7 @@ pub fn toggle_like(mut station: Station, song: library::Song) {
         }
     };
     flip(&mut station, !liked);
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = client();
         let sent = runtime::spawn(async move { api.rate_track(&id, !liked).await }).await;
         if let Ok(Err(error)) | Err(error) = sent.map_err(anyhow::Error::from) {
@@ -737,7 +752,7 @@ fn toast(mut station: Station, text: &str, open_queue: bool) {
         open_queue,
         id,
     });
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let _ = runtime::spawn(async { tokio::time::sleep(TOAST_FOR).await }).await;
         let still = station
             .peek()
@@ -781,6 +796,7 @@ fn save_settings(state: &AppState) {
         interface: state.interface,
         translate: state.translate,
         discord: state.discord,
+        volume: state.volume,
     });
 }
 
@@ -788,7 +804,7 @@ fn save_settings(state: &AppState) {
 fn load_library(mut station: Station) {
     station.write_channel(Channel::Library).library = Load::Loading;
     station.write_channel(Channel::Library).home = Load::Loading;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = client();
         let loaded = runtime::spawn(async move { library::home(&api).await }).await;
         station.write_channel(Channel::Library).home = match loaded {
@@ -801,7 +817,7 @@ fn load_library(mut station: Station) {
             state.focus.content = nav::first(&state);
         }
     });
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = client();
         let loaded = runtime::spawn(async move { library::load(&api).await }).await;
         station.write_channel(Channel::Library).library = match loaded {
@@ -827,7 +843,7 @@ fn open(mut station: Station, collection: Collection) {
         return open_artist(station, collection);
     }
     station.write_channel(Channel::Detail).detail = Load::Loading;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = client();
         let wanted = collection.clone();
         let loaded = runtime::spawn(async move { library::tracks(&api, &wanted).await }).await;
@@ -846,7 +862,7 @@ fn open(mut station: Station, collection: Collection) {
 /// Loads an artist's page into the state.
 fn open_artist(mut station: Station, artist: Collection) {
     station.write_channel(Channel::Detail).artist = Load::Loading;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = client();
         let id = artist.id.clone();
         let loaded = runtime::spawn(async move { library::artist_page(&api, &id).await }).await;
@@ -867,12 +883,12 @@ fn sign_in(mut station: Station, engine: Engine) {
     station.write_channel(Channel::Auth).auth = Auth::SigningIn("Abriendo Google…".into());
     let (steps, mut heard) = tokio::sync::mpsc::unbounded_channel::<String>();
     let mut progress = station;
-    spawn_forever(async move {
+    spawn_in_window(async move {
         while let Some(step) = heard.recv().await {
             progress.write_channel(Channel::Auth).auth = Auth::SigningIn(step);
         }
     });
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let say = move |step: String| {
             let _ = steps.send(step);
         };
