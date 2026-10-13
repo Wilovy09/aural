@@ -676,7 +676,7 @@ dependencies = [
  "clang-sys",
  "itertools 0.13.0",
  "log",
- "prettyplease",
+ "prettyplease 0.2.37",
  "proc-macro2",
  "quote",
  "regex",
@@ -695,13 +695,13 @@ dependencies = [
  "cexpr",
  "clang-sys",
  "log",
- "prettyplease",
+ "prettyplease 0.3.0",
  "proc-macro2",
  "quote",
  "regex",
  "rustc-hash",
  "shlex 2.0.1",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1782,7 +1782,7 @@ dependencies = [
 
 [[package]]
 name = "freya"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "cfg-if",
  "freya-android",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "freya-android"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-components",
  "freya-core",
@@ -1813,7 +1813,7 @@ dependencies = [
 
 [[package]]
 name = "freya-animation"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "easer",
  "freya-core",
@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "freya-clipboard"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "copypasta",
  "freya-core",
@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "freya-components"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -1851,7 +1851,7 @@ dependencies = [
 
 [[package]]
 name = "freya-core"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "accesskit",
  "async-io",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "freya-edit"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "bitflags 2.13.2",
  "freya-clipboard",
@@ -1893,14 +1893,14 @@ dependencies = [
 
 [[package]]
 name = "freya-engine"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-skia-safe",
 ]
 
 [[package]]
 name = "freya-ios"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-core",
  "freya-winit",
@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "freya-metrics-plugin"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-core",
  "freya-engine",
@@ -1925,23 +1925,23 @@ dependencies = [
 
 [[package]]
 name = "freya-radio"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-core",
 ]
 
 [[package]]
 name = "freya-sdk"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "freya-core",
 ]
 
 [[package]]
 name = "freya-skia-bindings"
-version = "0.102.0"
+version = "0.104.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69ad42a4ebefdfe6df2b48fe32f428b88401750a2184603574c67e64f6eecc92"
+checksum = "8b842f8c0e9b10134a4f6a9a12af88ac9502dac119a0c9340f0fcd833b51f34a"
 dependencies = [
  "bindgen 0.73.2",
  "cc",
@@ -1956,9 +1956,9 @@ dependencies = [
 
 [[package]]
 name = "freya-skia-safe"
-version = "0.102.0"
+version = "0.104.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4486b586c5c0ad66e24cef0cbcedb3c13ed87342043c029540224205d9bb3d9"
+checksum = "1ea5f92b1bb2850278a94883f3aca84dd28d49320b4cf44941a43cd40b595c54"
 dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
@@ -1969,9 +1969,9 @@ dependencies = [
 
 [[package]]
 name = "freya-skia-svg-macros"
-version = "0.102.0"
+version = "0.104.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d88b35b06aa4f3717b12544dcf3961e60a7d4ecc331afc585a8b1e3002977383"
+checksum = "b066d6dcffdaccd60ce58a171ea4cb700d8e04b31564f071195df4702c0e494a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "freya-winit"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3915,7 +3915,7 @@ checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
 name = "pathgraph"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 
 [[package]]
 name = "percent-encoding"
@@ -4140,6 +4140,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4324,7 +4334,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "ragnarok"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "euclid",
  "hashbrown 0.16.1",
@@ -5628,7 +5638,7 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "torin"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 dependencies = [
  "euclid",
  "itertools 0.14.0",

@@ -17,6 +17,8 @@ pub struct Settings {
     pub translate: bool,
     /// Show the song playing as the activity on Discord (desktop only).
     pub discord: bool,
+    /// How loud the music plays, apart from the device's volume (desktop only).
+    pub volume: crate::engine::Volume,
 }
 
 impl Default for Settings {
@@ -27,6 +29,7 @@ impl Default for Settings {
             interface: Scale::default(),
             translate: false,
             discord: true,
+            volume: crate::engine::Volume::default(),
         }
     }
 }
@@ -76,13 +79,9 @@ impl Scale {
 
 /// Draws the whole window at `scale`'s zoom: layout and text reflow at the new size.
 pub fn apply_interface(scale: Scale) {
-    use freya::prelude::WinitPlatformExt as _;
-    let zoom = scale.zoom();
-    let _ = freya::prelude::Platform::get().post_callback(move |id, context| {
-        if let Some(window) = context.windows.get_mut(&id) {
-            window.set_custom_scale_factor(zoom as f64);
-        }
-    });
+    freya::prelude::Platform::get()
+        .current_window()
+        .set_custom_scale_factor(scale.zoom() as f64);
 }
 
 /// The saved settings, or the defaults.

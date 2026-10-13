@@ -151,6 +151,9 @@ pub enum Icon {
     Night,
     Search,
     Close,
+    VolumeMute,
+    VolumeLow,
+    VolumeHigh,
 }
 
 impl Icon {
@@ -198,6 +201,9 @@ impl Icon {
             Icon::Night => svg!("moon"),
             Icon::Search => svg!("search"),
             Icon::Close => svg!("x"),
+            Icon::VolumeMute => svg!("volume-x"),
+            Icon::VolumeLow => svg!("volume-1"),
+            Icon::VolumeHigh => svg!("volume-2"),
         }
     }
 }
@@ -304,9 +310,9 @@ pub fn eyebrow(text: &str) -> Label {
 
 /// The window's size in logical pixels.
 pub fn viewport() -> (f32, f32) {
-    let platform = Platform::get();
-    let size = *platform.root_size.read();
-    let scale = (*platform.scale_factor.read() as f32).max(0.5);
+    let window = Platform::get().current_window();
+    let size = *window.root_size.read();
+    let scale = (*window.scale_factor.read() as f32).max(0.5);
     (size.width / scale, size.height / scale)
 }
 
@@ -314,13 +320,13 @@ pub fn viewport() -> (f32, f32) {
 pub fn safe() -> (f32, f32) {
     #[cfg(target_os = "android")]
     {
-        let scale = (*Platform::get().scale_factor.read() as f32).max(0.5);
+        let scale = (*Platform::get().current_window().scale_factor.read() as f32).max(0.5);
         let (top, bottom) = crate::login::insets();
         (top / scale, bottom / scale)
     }
     #[cfg(target_os = "ios")]
     {
-        let scale = (*Platform::get().scale_factor.read() as f32).max(0.5);
+        let scale = (*Platform::get().current_window().scale_factor.read() as f32).max(0.5);
         let (top, bottom) = crate::platform::insets();
         (top / scale, bottom / scale)
     }

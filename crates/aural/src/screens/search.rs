@@ -718,7 +718,7 @@ pub fn run(mut station: RadioStation<AppState, Channel>, query: String) {
         state.search.results = Load::Loading;
         state.search.filter = Filter::All;
     }
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = crate::app::client();
         let wanted = query.clone();
         let found = runtime::spawn(async move { library::search(&api, &wanted).await }).await;
