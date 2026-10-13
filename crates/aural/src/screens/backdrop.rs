@@ -16,7 +16,6 @@
 
 use std::time::{Duration, Instant};
 
-use freya::animation::{AnimNum, OnCreation, OnFinish, use_animation};
 use freya::engine::prelude::{
     BlendMode, FilterMode, MipmapMode, Paint, SamplingOptions, SkData, SkImage, SkRect, TileMode,
     blur, raster_n32_premul,
@@ -89,13 +88,22 @@ impl Component for Backdrop {
             });
         });
 
-        // A looping animation used only as a frame clock; the canvas changes FPS times a second.
-        let clock = use_animation(|config| {
-            config.on_creation(OnCreation::Run);
-            config.on_finish(OnFinish::restart());
-            AnimNum::new(0., 1.).time(1000)
+        // A frame clock at FPS: a looping animation would re-render at the display's rate,
+        // up to 120 Hz, for a canvas that only changes FPS times a second.
+        let mut tick = use_state(|| 0u64);
+        use_hook(move || {
+            spawn(async move {
+                loop {
+                    // Built inside the async block: `sleep` needs the runtime's timer when made.
+                    let _ = crate::runtime::spawn(async {
+                        tokio::time::sleep(Duration::from_secs_f32(1. / FPS)).await;
+                    })
+                    .await;
+                    *tick.write() += 1;
+                }
+            });
         });
-        let _ = clock.get();
+        tick.read();
         let frame = (started.elapsed().as_secs_f32() * FPS) as u64;
         let time = frame as f32 / FPS;
 
