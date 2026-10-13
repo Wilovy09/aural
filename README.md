@@ -67,6 +67,16 @@ You need a recent stable Rust toolchain (edition 2024).
 cargo run --release -p aural
 ```
 
+### macOS app
+
+```sh
+./scripts/macos.sh              # build/macos/Aural.app and build/Aural.dmg
+./scripts/macos.sh --universal  # one binary for Apple silicon and Intel
+./scripts/macos.sh --install    # also copies Aural.app to /Applications
+```
+
+Open `build/Aural.dmg` and drag Aural onto Applications. The app is signed ad hoc, so on another Mac Gatekeeper blocks it the first time: right-click it and choose Open. Set `AURAL_IDENTITY` to a Developer ID Application identity to sign it properly.
+
 ### Android
 
 Requirements: the Android SDK with an NDK, build-tools and CMake, JDK 17, and [`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk):
