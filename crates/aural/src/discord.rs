@@ -73,6 +73,7 @@ static WORKER: Once = Once::new();
 
 /// Turns the activity on or off, as the setting says.
 pub fn enable(enabled: bool) {
+    log::info!("discord: activity {}", if enabled { "on" } else { "off" });
     ENABLED.store(enabled, Ordering::SeqCst);
     let activity = HEARD
         .lock()
@@ -154,6 +155,7 @@ enum Failure {
 
 /// Sends each activity wanted to Discord, once it has settled.
 fn work() {
+    log::debug!("discord: worker started for application {APPLICATION_ID}");
     let mut client = DiscordIpcClient::new(APPLICATION_ID);
     let mut connected = false;
     // `None` until something reached Discord, so the first answer is always sent.
@@ -205,11 +207,31 @@ fn work() {
         let sent = send(&mut client, &mut connected, activity.as_ref(), cover);
         retrying = matches!(sent, Err(Failure::Unreachable(_)));
         match sent {
-            Ok(()) => reported = None,
-            Err(Failure::Unreachable(failure) | Failure::Refused(failure)) => {
-                // Said once, however long it keeps failing: Discord being closed is normal.
+            Ok(()) => {
+                match &activity {
+                    Some(activity) => log::debug!(
+                        "discord: showing {} ({}) by {}",
+                        activity.song.title,
+                        activity.song.id,
+                        activity.song.artist
+                    ),
+                    None => log::debug!("discord: activity cleared"),
+                }
+                reported = None;
+            }
+            // Said once, however long it keeps failing: Discord being closed is normal.
+            Err(Failure::Unreachable(failure)) => {
                 if reported.as_ref() != Some(&failure) {
-                    log::info!("discord: cannot show the activity: {failure}");
+                    log::info!(
+                        "discord: cannot reach Discord, retrying every {}s: {failure}",
+                        RETRY.as_secs()
+                    );
+                    reported = Some(failure);
+                }
+            }
+            Err(Failure::Refused(failure)) => {
+                if reported.as_ref() != Some(&failure) {
+                    log::warn!("discord: Discord refused the activity: {failure}");
                     reported = Some(failure);
                 }
             }
@@ -230,7 +252,10 @@ fn send(
 ) -> Result<(), Failure> {
     if *connected {
         match offer(client, activity, cover.as_deref()) {
-            Err(Failure::Unreachable(_)) => *connected = false,
+            Err(Failure::Unreachable(error)) => {
+                log::info!("discord: connection lost, reconnecting: {error}");
+                *connected = false;
+            }
             result => return result,
         }
     }
@@ -238,9 +263,11 @@ fn send(
     if activity.is_none() && !*connected {
         return Ok(());
     }
+    log::debug!("discord: connecting to the local Discord app");
     client
         .connect()
         .map_err(|error| Failure::Unreachable(error.to_string()))?;
+    log::info!("discord: connected");
     *connected = true;
     offer(client, activity, cover.as_deref())
 }
@@ -308,7 +335,21 @@ fn cover(covers: &mut HashMap<String, Option<String>>, song: &Song) -> Option<St
         .cover
         .as_deref()
         .map(|url| library::sized(url, ART_EDGE));
+    let from = match (&apple, &youtube) {
+        (Some(_), _) => "apple",
+        (None, Some(_)) => "youtube",
+        (None, None) => "none",
+    };
     let cover = apple.or(youtube).filter(|url| url.starts_with("https://"));
+    log::debug!(
+        "discord: cover for {} from {from}{}",
+        song.id,
+        if cover.is_none() && from != "none" {
+            " (not https, dropped)"
+        } else {
+            ""
+        }
+    );
     covers.insert(song.id.clone(), cover.clone());
     cover
 }
