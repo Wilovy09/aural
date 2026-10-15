@@ -131,7 +131,16 @@ Aural builds on the work of:
 - [Freya](https://github.com/marc2332/freya): UI framework
 - [Lucide](https://lucide.dev): icons
 
-Aural is not affiliated with YouTube, Google, Apple or Musixmatch.
+## Legal notice and DMCA
+
+Aural is an independent, non-commercial, open-source client for desktop, Android, Android TV and iOS, made for personal use, interoperability and study.
+
+- **No copyrighted content is hosted.** Aural does not host, store, stream from its own servers or redistribute any audio, video or other copyrighted media. It has no servers.
+- **Client-side interoperability.** Aural is a player that talks to public web services on behalf of the signed-in user, from the user's own device.
+- **Trademarks.** YouTube, YouTube Music, Google, Apple Music, Musixmatch, Discord, Android and iOS are trademarks of their respective owners. Aural is not affiliated with, sponsored or endorsed by Google LLC, Alphabet Inc., Apple Inc., Musixmatch S.p.A. or Discord Inc.
+- **DMCA.** If you own the copyright to something referenced in this repository, or act for its owner, and believe it infringes your rights, please [open an issue](https://github.com/Wilovy09/aural/issues) or contact the maintainers before taking formal action.
+
+Using Aural is subject to its [Terms of Service](TERMS.md) and [Privacy Policy](PRIVACY.md).
 
 ## License
 
