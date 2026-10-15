@@ -94,6 +94,8 @@ webview.workspace = true
 # Discord's activity talks to the Discord app on the same computer; phones have none.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 discord-rich-presence = "1.1"
+# The icon in the menu bar or the system tray.
+freya = { workspace = true, features = ["tray"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

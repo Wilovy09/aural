@@ -160,6 +160,11 @@ pub enum Icon {
     AddToPlaylist,
     Share,
     More,
+    Globe,
+    Link,
+    Lock,
+    Plus,
+    ChevronDown,
 }
 
 impl Icon {
@@ -216,6 +221,11 @@ impl Icon {
             Icon::AddToPlaylist => svg!("list-plus"),
             Icon::Share => svg!("share"),
             Icon::More => svg!("ellipsis-vertical"),
+            Icon::Globe => svg!("globe"),
+            Icon::Link => svg!("link"),
+            Icon::Lock => svg!("lock"),
+            Icon::Plus => svg!("plus"),
+            Icon::ChevronDown => svg!("chevron-down"),
         }
     }
 }

@@ -274,6 +274,15 @@ pub fn app() -> impl IntoElement {
         }
     });
     use_hook(move || crate::settings::apply_interface(station.peek().interface));
+    // The tray's menu shows the song playing and whether it plays.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let now = use_radio::<AppState, Channel>(Channel::Now);
+        use_side_effect(move || {
+            let state = now.read();
+            crate::tray::follow(state.now.song.as_ref(), state.now.playing);
+        });
+    }
     let auth = use_radio::<AppState, Channel>(Channel::Auth);
     let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
 
@@ -420,6 +429,7 @@ pub fn app() -> impl IntoElement {
         ))
         .child(crate::screens::pairing::PairingCode)
         .child(crate::menu::MenuLayer)
+        .child(crate::screens::new_playlist::NewPlaylist)
         .child(crate::chrome::toast::Notice)
 }
 
@@ -578,6 +588,17 @@ fn perform(station: Station, engine: &Engine, action: Action) {
         Action::Go(_) => {}
         Action::Open(collection) => open(station, collection),
         Action::ToggleSave(album) => toggle_save(station, album),
+        Action::Mood(at) => {
+            let mut station = station;
+            {
+                let mut state = station.write_channel(Channel::Library);
+                state.mood = match state.mood == Some(at) {
+                    true => None,
+                    false => Some(at),
+                };
+            }
+            load_home(station);
+        }
         Action::SeekBy(seconds) => {
             let position = station.peek().position;
             let to = match seconds < 0 {
@@ -751,6 +772,15 @@ pub fn menu_facts(id: &str) -> (bool, Vec<Collection>) {
     })
 }
 
+/// Sends `command` to the player that plays, as the tray's buttons do.
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+pub fn control(command: Command) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    player(station, &engine, command);
+}
+
 /// Puts `song` right after the one playing, on the player that plays.
 pub fn play_next(song: library::Song) {
     let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
@@ -899,23 +929,108 @@ fn save_settings(state: &AppState) {
     });
 }
 
-/// Loads the library into the state.
-fn load_library(mut station: Station) {
-    station.write_channel(Channel::Library).library = Load::Loading;
+/// Loads the home feed, narrowed to the mood chosen, into the state.
+fn load_home(mut station: Station) {
+    let params = {
+        let state = station.peek();
+        state
+            .mood
+            .and_then(|at| state.moods.get(at))
+            .map(|mood| mood.params.clone())
+    };
     station.write_channel(Channel::Library).home = Load::Loading;
     spawn_in_window(async move {
         let api = client();
-        let loaded = runtime::spawn(async move { library::home(&api).await }).await;
-        station.write_channel(Channel::Library).home = match loaded {
-            Ok(Ok(shelves)) => Load::Ready(shelves),
-            Ok(Err(error)) => Load::Failed(format!("{error:#}")),
-            Err(error) => Load::Failed(error.to_string()),
+        let asked = params.clone();
+        let loaded =
+            runtime::spawn(async move { library::home(&api, asked.as_deref()).await }).await;
+        let mut state = station.write_channel(Channel::Library);
+        // A mood chosen while this loaded asks again for itself.
+        let wanted = state
+            .mood
+            .and_then(|at| state.moods.get(at))
+            .map(|mood| &mood.params);
+        if wanted != params.as_ref() {
+            return;
+        }
+        state.home = match loaded
+            .map_err(anyhow::Error::from)
+            .and_then(|loaded| loaded)
+        {
+            Ok(feed) => {
+                // The moods stay those of the whole feed, so one chosen can be left.
+                if params.is_none() {
+                    state.moods = feed.moods;
+                }
+                Load::Ready(feed.shelves)
+            }
+            Err(error) => Load::Failed(format!("{error:#}")),
         };
+        drop(state);
         let mut state = station.write_channel(Channel::Navigation);
-        if state.focus.zone == Zone::Content && state.page == Page::Home {
+        if state.focus.zone == Zone::Content
+            && state.page == Page::Home
+            && !matches!(state.focus.content, crate::state::Spot::Chip(_))
+        {
             state.focus.content = nav::first(&state);
         }
     });
+}
+
+/// Creates a playlist in the account and shows it among the playlists.
+pub fn create_playlist(title: String, description: String, privacy: library::Privacy) {
+    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    spawn_in_window(async move {
+        let api = client();
+        let name = title.clone();
+        let created = runtime::spawn(async move {
+            library::create_playlist(&api, &title, &description, privacy).await
+        })
+        .await;
+        match created
+            .map_err(anyhow::Error::from)
+            .and_then(|created| created)
+        {
+            Ok(_) => {
+                toast(station, &format!("Se creó {name}"), false);
+                refresh_library(station);
+            }
+            Err(error) => {
+                log::warn!("library: cannot create a playlist: {error:#}");
+                toast(station, "No se pudo crear la playlist", false);
+            }
+        }
+    });
+}
+
+/// Plays `songs` from the first, as a shelf's "Reproducir todo".
+pub fn play_all(songs: Vec<library::Song>) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    if !songs.is_empty() {
+        player(
+            station,
+            &engine,
+            Command::Play {
+                queue: songs,
+                index: 0,
+            },
+        );
+    }
+}
+
+/// Loads the library into the state.
+fn load_library(mut station: Station) {
+    station.write_channel(Channel::Library).library = Load::Loading;
+    load_home(station);
+    refresh_library(station);
+}
+
+/// Reads the library again, as it is in the account now.
+fn refresh_library(mut station: Station) {
     spawn_in_window(async move {
         let api = client();
         let loaded = runtime::spawn(async move { library::load(&api).await }).await;

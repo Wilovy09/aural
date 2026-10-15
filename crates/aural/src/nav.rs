@@ -20,6 +20,8 @@ pub enum Action {
     Shuffle(Vec<Song>),
     /// Saves the album to the library, or takes it out.
     ToggleSave(Collection),
+    /// Narrows the home feed to a mood, or back to all of it when it is the one chosen.
+    Mood(usize),
     Toggle,
     Next,
     Previous,
@@ -436,8 +438,16 @@ fn home(state: &mut AppState, press: Press) -> Action {
         .ready()
         .map(|shelves| shelves.iter().map(|shelf| shelf.picks.len()).collect())
         .unwrap_or_default();
+    let moods = state.moods.len();
     let spot = state.focus.content;
     let next = match (spot, press) {
+        // The moods, a row over the shelves.
+        (Spot::Chip(at), Press::Left) if at > 0 => Spot::Chip(at - 1),
+        (Spot::Chip(at), Press::Right) if at + 1 < moods => Spot::Chip(at + 1),
+        (Spot::Chip(_), Press::Down) if !lengths.is_empty() => Spot::Cell(0, 0),
+        (Spot::Chip(_), Press::Up) => spot,
+        (Spot::Chip(at), Press::Ok) => return Action::Mood(at),
+        (Spot::Cell(0, _), Press::Up) if moods > 0 => Spot::Chip(state.mood.unwrap_or(0)),
         (Spot::Cell(shelf, at), Press::Right)
             if at + 1 < lengths.get(shelf).copied().unwrap_or(0) =>
         {
@@ -620,6 +630,7 @@ fn valid(state: &AppState, spot: Spot) -> bool {
             .is_some_and(|found| at < found.picks.len()),
         Spot::Row(r) => state.songs().is_some_and(|songs| r < songs.len()),
         Spot::Card(c) => state.cards().is_some_and(|cards| c < cards.len()),
+        Spot::Chip(at) if state.page == Page::Home => at < state.moods.len(),
         Spot::Chip(at) => at < Filter::ALL.len(),
         Spot::Best => state
             .search

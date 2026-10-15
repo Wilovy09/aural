@@ -251,6 +251,9 @@ pub struct AppState {
     pub library: Load<Library>,
     /// The home feed's shelves.
     pub home: Load<Vec<crate::library::HomeShelf>>,
+    /// The moods that narrow the home feed, and the one chosen.
+    pub moods: Vec<crate::library::Mood>,
+    pub mood: Option<usize>,
     pub detail: Load<Vec<Song>>,
     /// The playlist behind the album on screen, which saving it to the library rates.
     pub album_playlist: Option<String>,

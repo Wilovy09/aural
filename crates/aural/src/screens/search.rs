@@ -690,7 +690,6 @@ pub(crate) fn tile(
                     false => metrics::RADIUS + 3.,
                 })
                 .padding(3.)
-                .margin(-3.)
                 .border(ui::focus_border(focused))
                 .child(Cover {
                     apple: crate::artwork::Wanted::collection(item),
@@ -707,9 +706,14 @@ pub(crate) fn tile(
         .child(
             ui::line(item.title.clone(), text::BODY, color::FOREGROUND)
                 .font_weight(FontWeight::SEMI_BOLD)
-                .width(Size::fill()),
+                .width(Size::fill())
+                .margin((0., 3.)),
         )
-        .child(ui::line(subtitle, text::SMALL, color::MUTED_FOREGROUND).width(Size::fill()))
+        .child(
+            ui::line(subtitle, text::SMALL, color::MUTED_FOREGROUND)
+                .width(Size::fill())
+                .margin((0., 3.)),
+        )
 }
 
 /// Searches for `query` and puts what it finds in the state.
