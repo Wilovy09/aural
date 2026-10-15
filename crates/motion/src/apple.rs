@@ -20,7 +20,7 @@ use objc2_core_video::{
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
 
-use crate::Frame;
+use crate::{ChannelOrder, Frame};
 
 /// How late a frame may be before the clock restarts at it.
 const LATE: Duration = Duration::from_millis(250);
@@ -122,7 +122,7 @@ fn reader(
     }
 }
 
-/// Copies a BGRA pixel buffer out as tightly packed RGBA.
+/// Copies a BGRA pixel buffer out tightly packed, keeping the decoder's channel order.
 fn convert(image: &objc2_core_video::CVPixelBuffer, pts: Duration) -> Result<Frame> {
     // SAFETY: a live pixel buffer, unlocked below with the same flags.
     if unsafe { CVPixelBufferLockBaseAddress(image, CVPixelBufferLockFlags::ReadOnly) } != 0 {
@@ -132,14 +132,15 @@ fn convert(image: &objc2_core_video::CVPixelBuffer, pts: Duration) -> Result<Fra
     let height = CVPixelBufferGetHeight(image);
     let stride = CVPixelBufferGetBytesPerRow(image);
     let base = CVPixelBufferGetBaseAddress(image) as *const u8;
-    let mut rgba = Vec::with_capacity(width * height * 4);
+    let row = width * 4;
+    let mut pixels = Vec::with_capacity(row * height);
     if !base.is_null() {
-        for row in 0..height {
-            // SAFETY: the buffer is locked and `stride` bytes long per row, `height` rows tall.
-            let line = unsafe { std::slice::from_raw_parts(base.add(row * stride), width * 4) };
-            for pixel in line.chunks_exact(4) {
-                rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-            }
+        // The last row may stop at its pixels rather than the full stride.
+        let length = height.checked_sub(1).map_or(0, |rows| rows * stride + row);
+        // SAFETY: the buffer is locked and `stride` bytes long per row, `height` rows tall.
+        let plane = unsafe { std::slice::from_raw_parts(base, length) };
+        for line in plane.chunks(stride) {
+            pixels.extend_from_slice(&line[..row]);
         }
     }
     // SAFETY: locked above with the same flags.
@@ -150,7 +151,8 @@ fn convert(image: &objc2_core_video::CVPixelBuffer, pts: Duration) -> Result<Fra
     Ok(Frame {
         width: width as u32,
         height: height as u32,
-        rgba,
+        order: ChannelOrder::Bgra,
+        pixels,
         pts,
     })
 }

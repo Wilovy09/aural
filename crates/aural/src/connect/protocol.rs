@@ -83,6 +83,14 @@ pub enum Remote {
     Enqueue {
         song: Song,
     },
+    /// Add a song right after the one playing.
+    PlayNext {
+        song: Song,
+    },
+    /// Play the song at this place in the queue.
+    Jump {
+        at: usize,
+    },
     /// Take the song at this place out of the queue.
     Remove {
         at: usize,

@@ -73,6 +73,13 @@ impl Component for Songs {
             _ => metrics::RADIUS,
         };
         let action = |index: usize| in_content && focus.content == Spot::Action(index);
+        // Albums can be saved to the library from their page.
+        let saved = match &page {
+            Page::Detail(collection) if collection.kind == Kind::Album => {
+                Some(library.read().saved(&collection.id))
+            }
+            _ => None,
+        };
         let row = match focus.content {
             Spot::Row(row) if in_content && !ui::touch() => Some(row),
             _ => None,
@@ -183,7 +190,23 @@ impl Component for Songs {
                                                 .on_press(ui::tap(Target::Content(Spot::Action(
                                                     1,
                                                 )))),
-                                            ),
+                                            )
+                                            .maybe_child(saved.map(|saved| {
+                                                ui::pill(
+                                                    false,
+                                                    match saved {
+                                                        true => Icon::HeartFilled,
+                                                        false => Icon::Heart,
+                                                    },
+                                                    Some(match saved {
+                                                        true => "Guardado",
+                                                        false => "Guardar",
+                                                    }),
+                                                    action(2),
+                                                    ring_light,
+                                                )
+                                                .on_press(ui::tap(Target::Content(Spot::Action(2))))
+                                            })),
                                     ),
                             ),
                     )
@@ -417,6 +440,12 @@ impl Component for TrackRow {
         };
 
         let row = rect()
+            .on_secondary_down({
+                let song = song.clone();
+                move |event: Event<PressEventData>| {
+                    crate::menu::open(song.clone(), crate::menu::location(&event))
+                }
+            })
             .height(Size::px(row_height()))
             .width(Size::fill())
             .direction(Direction::Horizontal)
@@ -501,14 +530,34 @@ impl Component for TrackRow {
                         slot.child(ui::heart(liked, 16., light, color::MUTED_FOREGROUND))
                     })
             })
-            .child(
+            // The duration, or under the pointer the button that opens the song's menu.
+            .child({
+                let song = song.clone();
                 rect()
                     .width(Size::px(84.))
                     .padding((0., 14., 0., 0.))
                     .direction(Direction::Horizontal)
                     .main_align(Alignment::End)
-                    .child(duration),
-            );
+                    .cross_align(Alignment::Center)
+                    .map(hover.then_some(()), |slot, _| {
+                        slot.child(
+                            rect()
+                                .width(Size::px(32.))
+                                .height(Size::px(32.))
+                                .center()
+                                .corner_radius(16.)
+                                .on_pointer_down(move |event: Event<PointerEventData>| {
+                                    event.stop_propagation();
+                                    let at = event.global_location();
+                                    crate::menu::open(song.clone(), (at.x as f32, at.y as f32));
+                                })
+                                // The release that opened the menu does not play the song.
+                                .on_press(|event: Event<PressEventData>| event.stop_propagation())
+                                .child(ui::icon(Icon::More, 18., color::FOREGROUND)),
+                        )
+                    })
+                    .maybe(!hover, |slot| slot.child(duration))
+            });
         // Swiped to the left, the song joins the queue.
         let queued = self.song.clone();
         ui::swipe::Swipe {

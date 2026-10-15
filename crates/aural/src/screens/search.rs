@@ -513,6 +513,12 @@ impl View<'_> {
             (false, _) => song.artist.clone(),
         };
         let line = rect()
+            .on_secondary_down({
+                let song = song.clone();
+                move |event: Event<PressEventData>| {
+                    crate::menu::open(song.clone(), crate::menu::location(&event))
+                }
+            })
             .width(Size::fill())
             .height(Size::px(ROW))
             .padding((0., 10.))
@@ -684,7 +690,6 @@ pub(crate) fn tile(
                     false => metrics::RADIUS + 3.,
                 })
                 .padding(3.)
-                .margin(-3.)
                 .border(ui::focus_border(focused))
                 .child(Cover {
                     apple: crate::artwork::Wanted::collection(item),
@@ -701,9 +706,14 @@ pub(crate) fn tile(
         .child(
             ui::line(item.title.clone(), text::BODY, color::FOREGROUND)
                 .font_weight(FontWeight::SEMI_BOLD)
-                .width(Size::fill()),
+                .width(Size::fill())
+                .margin((0., 3.)),
         )
-        .child(ui::line(subtitle, text::SMALL, color::MUTED_FOREGROUND).width(Size::fill()))
+        .child(
+            ui::line(subtitle, text::SMALL, color::MUTED_FOREGROUND)
+                .width(Size::fill())
+                .margin((0., 3.)),
+        )
 }
 
 /// Searches for `query` and puts what it finds in the state.
@@ -718,7 +728,7 @@ pub fn run(mut station: RadioStation<AppState, Channel>, query: String) {
         state.search.results = Load::Loading;
         state.search.filter = Filter::All;
     }
-    spawn_forever(async move {
+    spawn_in_window(async move {
         let api = crate::app::client();
         let wanted = query.clone();
         let found = runtime::spawn(async move { library::search(&api, &wanted).await }).await;

@@ -6,11 +6,11 @@ use freya::radio::use_radio;
 use crate::library::Collection;
 use crate::nav::Target;
 use crate::state::{AppState, Channel, Load, Page, Spot, Zone};
-use crate::ui::{self, Cover, color, metrics, text};
+use crate::ui::{self, Cover, Icon, color, metrics, text};
 
-/// Height of one grid row: the cover, two lines of text and the gap.
+/// Height of one grid row: the cover inside its focus ring, two lines of text and the gap.
 pub(crate) fn row() -> f32 {
-    ui::card() + 60.
+    ui::card() + 66.
 }
 
 #[derive(PartialEq)]
@@ -61,7 +61,34 @@ impl Component for Cards {
             .spacing(16.)
             .content(Content::Flex)
             .child(
-                ui::line(title, text::TITLE, color::FOREGROUND).font_weight(FontWeight::SEMI_BOLD),
+                rect()
+                    .width(Size::fill())
+                    .direction(Direction::Horizontal)
+                    .content(Content::Flex)
+                    .cross_align(Alignment::Center)
+                    .child(
+                        ui::line(title, text::TITLE, color::FOREGROUND)
+                            .font_weight(FontWeight::SEMI_BOLD)
+                            .width(Size::flex(1.)),
+                    )
+                    // The playlists offer to make a new one.
+                    .maybe(page == Page::Playlists, |header| {
+                        header.child(
+                            ui::pill(
+                                false,
+                                Icon::Plus,
+                                Some("Nueva playlist"),
+                                false,
+                                color::LIGHT,
+                            )
+                            .on_press(
+                                |event: Event<PressEventData>| {
+                                    event.stop_propagation();
+                                    crate::screens::new_playlist::open();
+                                },
+                            ),
+                        )
+                    }),
             )
             .map(status, |page, status| {
                 page.child(ui::line(status, text::BODY, color::MUTED_FOREGROUND))
@@ -110,7 +137,6 @@ pub(crate) fn tile(index: usize, card: &Collection, focused: bool) -> impl IntoE
                 .corner_radius(metrics::RADIUS + 3.)
                 .padding(3.)
                 .border(ui::focus_border(focused))
-                .margin(-3.)
                 .child(Cover {
                     apple: crate::artwork::Wanted::collection(card),
                     ..Cover::new(card.cover.clone(), side - 6., metrics::RADIUS)
@@ -119,10 +145,12 @@ pub(crate) fn tile(index: usize, card: &Collection, focused: bool) -> impl IntoE
         .child(
             ui::line(card.title.clone(), text::BODY, color::FOREGROUND)
                 .font_weight(FontWeight::SEMI_BOLD)
-                .width(Size::fill()),
+                .width(Size::fill())
+                .margin((0., 3.)),
         )
         .child(
             ui::line(card.subtitle.clone(), text::SMALL, color::MUTED_FOREGROUND)
-                .width(Size::fill()),
+                .width(Size::fill())
+                .margin((0., 3.)),
         )
 }

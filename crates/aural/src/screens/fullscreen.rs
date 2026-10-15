@@ -2,8 +2,7 @@
 //! the song, the Música/Letra tabs, the progress and the transport with shuffle and repeat.
 //! The Letra tab puts the lyrics beside the player. Back closes it.
 
-use std::sync::Arc;
-
+use freya::engine::prelude::Image as SkImage;
 use freya::prelude::*;
 use freya::radio::use_radio;
 
@@ -27,14 +26,16 @@ impl Component for Fullscreen {
         let now = use_radio::<AppState, Channel>(Channel::Now);
         let motion_on = navigation.read().motion;
         let library = use_radio::<AppState, Channel>(Channel::Library);
-        let now_state = now.read().now.clone();
-        let song = now_state.song.clone();
+        let (song, playback) = {
+            let now = &now.read().now;
+            (now.song.clone(), Playback::from(now))
+        };
         let liked = song
             .as_ref()
             .is_some_and(|song| library.read().liked(&song.id));
         let night_title = song.as_ref().map(|song| song.title.clone());
 
-        let mut frame = use_state(|| None::<Arc<motion::Frame>>);
+        let mut frame = use_state(|| None::<SkImage>);
         let frame_number = use_state(|| 0u64);
         let mut task = use_state(|| None::<TaskHandle>);
         let wanted = use_reactive(&(song.clone(), motion_on));
@@ -96,14 +97,14 @@ impl Component for Fullscreen {
                 (false, true) => 2.,
                 (false, false) => 10.,
             })
-            .child(ui::toggle(Icon::Shuffle, now_state.shuffle, ring(0)).on_press(press(0)))
+            .child(ui::toggle(Icon::Shuffle, playback.shuffle, ring(0)).on_press(press(0)))
             .child(
                 ui::button(Variant::Ghost, Some(Icon::Previous), None, ring(1)).on_press(press(1)),
             )
             .child(
                 ui::button(
                     Variant::Primary,
-                    Some(match now_state.playing {
+                    Some(match playback.playing {
                         true => Icon::PauseFilled,
                         false => Icon::PlayFilled,
                     }),
@@ -115,11 +116,11 @@ impl Component for Fullscreen {
             .child(ui::button(Variant::Ghost, Some(Icon::Next), None, ring(3)).on_press(press(3)))
             .child(
                 ui::toggle(
-                    match now_state.repeat {
+                    match playback.repeat {
                         Repeat::One => Icon::RepeatOne,
                         _ => Icon::Repeat,
                     },
-                    now_state.repeat != Repeat::Off,
+                    playback.repeat != Repeat::Off,
                     ring(4),
                 )
                 .on_press(press(4)),
@@ -147,38 +148,30 @@ impl Component for Fullscreen {
                 .on_press(press(8)),
             );
         let progress = Progress {
-            loading: now_state.loading,
+            loading: playback.loading,
             focused: focus.full_row == 2,
             ink: color::ON_BACKDROP,
         };
 
         if compact && mode != Mode::Night {
             return phone(Phone {
-                art: match frame.read().clone() {
-                    Some(frame) => {
-                        cover::view(Some(Art::Motion(frame)), *frame_number.read(), side)
-                            .into_element()
-                    }
-                    None => Cover {
-                        apple: song.as_ref().map(crate::artwork::Wanted::song),
-                        ..Cover::new(
-                            song.as_ref().and_then(|s| s.cover.clone()),
-                            side,
-                            match split {
-                                true => 6.,
-                                false => metrics::PLAYER_RADIUS * 2.,
-                            },
-                        )
-                    }
-                    .edge(library::COVER_EDGE)
-                    .into_element(),
-                },
+                art: Artwork {
+                    frame,
+                    number: frame_number,
+                    song: song.clone(),
+                    side,
+                    radius: match split {
+                        true => 6.,
+                        false => metrics::PLAYER_RADIUS * 2.,
+                    },
+                }
+                .into_element(),
                 song,
                 view,
                 controls,
                 tabs,
                 progress,
-                now: now_state.clone(),
+                playback,
                 button: matches!(focus.full_row, 1 | 3).then_some(focus.full_button),
                 translating,
                 liked,
@@ -194,20 +187,12 @@ impl Component for Fullscreen {
             .height(Size::fill())
             .center()
             .spacing(12.)
-            .child(match frame.read().clone() {
-                Some(frame) => {
-                    cover::view(Some(Art::Motion(frame)), *frame_number.read(), side).into_element()
-                }
-                None => Cover {
-                    apple: song.as_ref().map(crate::artwork::Wanted::song),
-                    ..Cover::new(
-                        song.as_ref().and_then(|s| s.cover.clone()),
-                        side,
-                        metrics::PLAYER_RADIUS * 2.,
-                    )
-                }
-                .edge(library::COVER_EDGE)
-                .into_element(),
+            .child(Artwork {
+                frame,
+                number: frame_number,
+                song: song.clone(),
+                side,
+                radius: metrics::PLAYER_RADIUS * 2.,
             })
             .map(song, |screen, song| {
                 screen
@@ -283,6 +268,58 @@ impl Component for Fullscreen {
     }
 }
 
+/// The transport's state, read from [`crate::state::Now`] without cloning its queue.
+#[derive(Clone, Copy)]
+struct Playback {
+    loading: bool,
+    playing: bool,
+    shuffle: bool,
+    repeat: Repeat,
+}
+
+impl From<&crate::state::Now> for Playback {
+    fn from(now: &crate::state::Now) -> Self {
+        Self {
+            loading: now.loading,
+            playing: now.playing,
+            shuffle: now.shuffle,
+            repeat: now.repeat,
+        }
+    }
+}
+
+/// The big cover: the latest motion frame while the loop plays, the still one otherwise. Its
+/// own component so each new frame repaints only it, not the whole fullscreen player.
+#[derive(PartialEq)]
+struct Artwork {
+    frame: State<Option<SkImage>>,
+    number: State<u64>,
+    song: Option<Song>,
+    side: f32,
+    /// Corner radius of the still cover.
+    radius: f32,
+}
+
+impl Component for Artwork {
+    fn render(&self) -> impl IntoElement {
+        match self.frame.read().clone() {
+            Some(image) => {
+                cover::view(Some(Art::Motion(image)), *self.number.read(), self.side).into_element()
+            }
+            None => Cover {
+                apple: self.song.as_ref().map(crate::artwork::Wanted::song),
+                ..Cover::new(
+                    self.song.as_ref().and_then(|s| s.cover.clone()),
+                    self.side,
+                    self.radius,
+                )
+            }
+            .edge(library::COVER_EDGE)
+            .into_element(),
+        }
+    }
+}
+
 /// What the phone's fullscreen player is made of.
 struct Phone {
     art: Element,
@@ -291,7 +328,7 @@ struct Phone {
     controls: bool,
     tabs: Rect,
     progress: Progress,
-    now: crate::state::Now,
+    playback: Playback,
     /// The transport button the D-pad is on, if it is on the transport.
     button: Option<usize>,
     /// Whether the lyrics show their translation.
@@ -312,7 +349,7 @@ fn phone(parts: Phone) -> impl IntoElement {
         controls,
         tabs,
         progress,
-        now,
+        playback,
         button,
         translating,
         liked,
@@ -392,7 +429,7 @@ fn phone(parts: Phone) -> impl IntoElement {
         .direction(Direction::Horizontal)
         .main_align(Alignment::SpaceBetween)
         .cross_align(Alignment::Center)
-        .child(key(Icon::Shuffle, 22., mode_ink(now.shuffle), 0))
+        .child(key(Icon::Shuffle, 22., mode_ink(playback.shuffle), 0))
         .child(key(Icon::Previous, 30., color::FOREGROUND, 1))
         .child(
             rect()
@@ -407,7 +444,7 @@ fn phone(parts: Phone) -> impl IntoElement {
                 })
                 .on_press(press(2))
                 .child(ui::icon(
-                    match now.playing {
+                    match playback.playing {
                         true => Icon::PauseFilled,
                         false => Icon::PlayFilled,
                     },
@@ -417,12 +454,12 @@ fn phone(parts: Phone) -> impl IntoElement {
         )
         .child(key(Icon::Next, 30., color::FOREGROUND, 3))
         .child(key(
-            match now.repeat {
+            match playback.repeat {
                 Repeat::One => Icon::RepeatOne,
                 _ => Icon::Repeat,
             },
             22.,
-            mode_ink(now.repeat != Repeat::Off),
+            mode_ink(playback.repeat != Repeat::Off),
             4,
         ));
     let deck = rect()
@@ -521,11 +558,7 @@ fn phone(parts: Phone) -> impl IntoElement {
 
 /// Looks up the animated cover of `song`'s album and plays it into `frame` until the returned
 /// task is cancelled, which drops the receiver and stops the decoder.
-fn start(
-    song: &Song,
-    mut frame: State<Option<Arc<motion::Frame>>>,
-    mut number: State<u64>,
-) -> TaskHandle {
+fn start(song: &Song, mut frame: State<Option<SkImage>>, mut number: State<u64>) -> TaskHandle {
     let (frames, mut latest) = tokio::sync::watch::channel(None);
     cover::start(song, frames, |line| {
         log::info!("cover: {line}");

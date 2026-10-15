@@ -6,6 +6,7 @@ pub mod devices;
 pub mod fullscreen;
 pub mod home;
 pub mod lyrics;
+pub mod new_playlist;
 pub mod pairing;
 pub mod queue;
 pub mod search;

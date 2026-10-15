@@ -12,6 +12,8 @@ use crate::{images, library};
 pub struct Cover {
     pub url: Option<String>,
     pub side: f32,
+    /// The height, when it is not `side` too: a video's still is wider than tall.
+    pub height: Option<f32>,
     pub radius: f32,
     pub edge: u32,
     /// What to ask Apple's catalog for; its cover replaces the url's once found.
@@ -23,6 +25,7 @@ impl Cover {
         Self {
             url,
             side,
+            height: None,
             radius,
             edge: library::THUMB_EDGE,
             apple: None,
@@ -38,6 +41,12 @@ impl Cover {
     /// Prefer Apple Music's cover for `wanted`.
     pub fn apple(mut self, wanted: crate::artwork::Wanted) -> Self {
         self.apple = Some(wanted);
+        self
+    }
+
+    /// `side` wide and `height` tall, rather than square.
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
         self
     }
 
@@ -107,6 +116,7 @@ impl Component for Cover {
         });
 
         let side = self.side;
+        let tall = self.height.unwrap_or(side);
         let image: Option<(u64, Bytes)> = match (&url, loaded.read().clone()) {
             (Some(url), Some((from, bytes))) if *url == from => Some((images::key(url), bytes)),
             _ => None,
@@ -114,7 +124,7 @@ impl Component for Cover {
         let waiting = image.is_none();
         rect()
             .width(Size::px(side))
-            .height(Size::px(side))
+            .height(Size::px(tall))
             .corner_radius(self.radius)
             .background(color::MUTED)
             .center()
@@ -122,14 +132,18 @@ impl Component for Cover {
                 frame.child(
                     ImageViewer::new(ImageSource::from(image))
                         .width(Size::px(side))
-                        .height(Size::px(side))
+                        .height(Size::px(tall))
                         .aspect_ratio(AspectRatio::Max)
                         .image_cover(ImageCover::Center)
                         .corner_radius(self.radius),
                 )
             })
             .maybe(waiting, |frame| {
-                frame.child(icon(Icon::Music, side * 0.4, color::MUTED_FOREGROUND))
+                frame.child(icon(
+                    Icon::Music,
+                    side.min(tall) * 0.4,
+                    color::MUTED_FOREGROUND,
+                ))
             })
     }
 }

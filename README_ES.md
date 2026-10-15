@@ -68,6 +68,16 @@ Necesitas Rust estable reciente (edición 2024).
 cargo run --release -p aural
 ```
 
+### App de macOS
+
+```sh
+./scripts/macos.sh              # build/macos/Aural.app y build/Aural.dmg
+./scripts/macos.sh --universal  # un binario para Apple silicon e Intel
+./scripts/macos.sh --install    # además copia Aural.app a /Applications
+```
+
+Abre `build/Aural.dmg` y arrastra Aural a Aplicaciones. La app va firmada ad hoc, así que en otra Mac Gatekeeper la bloquea la primera vez: clic derecho y Abrir. Define `AURAL_IDENTITY` con una identidad Developer ID Application para firmarla bien.
+
 ### Android
 
 Requisitos: el SDK de Android con NDK, build-tools y CMake, JDK 17, y [`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk):
@@ -122,7 +132,16 @@ Aural se apoya en el trabajo de:
 - [Freya](https://github.com/marc2332/freya): framework de interfaz
 - [Lucide](https://lucide.dev): íconos
 
-Aural no está afiliado a YouTube, Google, Apple ni Musixmatch.
+## Aviso legal y DMCA
+
+Aural es un cliente independiente, sin fines comerciales y de código abierto para escritorio, Android, Android TV e iOS, hecho para uso personal, interoperabilidad y estudio.
+
+- **No aloja contenido protegido.** Aural no aloja, almacena, transmite desde servidores propios ni redistribuye audio, video ni ningún otro contenido protegido por derechos de autor. No tiene servidores.
+- **Interoperabilidad del lado del cliente.** Aural es un reproductor que se comunica con servicios web públicos en nombre del usuario que inició sesión, desde su propio dispositivo.
+- **Marcas.** YouTube, YouTube Music, Google, Apple Music, Musixmatch, Discord, Android e iOS son marcas de sus respectivos dueños. Aural no está afiliado, patrocinado ni respaldado por Google LLC, Alphabet Inc., Apple Inc., Musixmatch S.p.A. ni Discord Inc.
+- **DMCA.** Si eres titular de los derechos de algo referenciado en este repositorio, o actúas en su nombre, y crees que infringe tus derechos, por favor [abre un issue](https://github.com/Wilovy09/aural/issues) o contacta a los mantenedores antes de tomar acciones formales.
+
+El uso de Aural está sujeto a sus [Términos del servicio](TERMS.md) y su [Política de privacidad](PRIVACY.md).
 
 ## Licencia
 

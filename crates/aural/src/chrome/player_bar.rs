@@ -1,6 +1,6 @@
 //! The player: an island floating over the bottom edge, faintly lit by the cover of the song
-//! playing. The song on the left, the transport and progress in the middle, the devices and
-//! fullscreen buttons on the right.
+//! playing. The song on the left, the transport and progress in the middle, the music's
+//! volume (on a computer), the devices and fullscreen buttons on the right.
 
 use freya::prelude::*;
 use freya::radio::use_radio;
@@ -108,7 +108,12 @@ impl Component for PlayerBar {
                         .width(Size::flex(1.))
                         .direction(Direction::Horizontal)
                         .main_align(Alignment::End)
+                        .cross_align(Alignment::Center)
                         .spacing(4.)
+                        .maybe(
+                            cfg!(not(any(target_os = "android", target_os = "ios"))),
+                            |right| right.child(VolumeControl),
+                        )
                         .child(Casting)
                         .child(
                             ui::button(Variant::Ghost, Some(Icon::Cast), None, ring(3))
@@ -120,6 +125,94 @@ impl Component for PlayerBar {
                         ),
                 ),
         )
+    }
+}
+
+/// How far one notch of the mouse wheel moves the volume.
+const WHEEL_STEP: f32 = 0.05;
+/// The wheel delta Freya reports for one notch; a touchpad's pixels scale against it.
+const NOTCH: f64 = 53.;
+
+/// The music's volume, apart from the device's: a speaker that mutes and a thin bar like the
+/// progress one. Dragging is heard at once; the level is saved when the bar is let go.
+#[derive(PartialEq)]
+struct VolumeControl;
+
+impl Component for VolumeControl {
+    fn render(&self) -> impl IntoElement {
+        let radio = use_radio::<AppState, Channel>(Channel::Volume);
+        let volume = radio.read().volume;
+        let mut held = use_state(|| false);
+        let mut area = use_state(Area::default);
+        let at = move |x: f64| {
+            let width = area.peek().width().max(1.);
+            volume.at((x as f32 / width).clamp(0., 1.))
+        };
+        let shown = volume.shown();
+        let glyph = match shown {
+            0. => Icon::VolumeMute,
+            ..0.5 => Icon::VolumeLow,
+            _ => Icon::VolumeHigh,
+        };
+
+        rect()
+            .direction(Direction::Horizontal)
+            .cross_align(Alignment::Center)
+            .on_wheel(move |event: Event<WheelEventData>| {
+                if event.delta_y == 0. {
+                    return;
+                }
+                event.stop_propagation();
+                let step = (event.delta_y / NOTCH) as f32 * WHEEL_STEP;
+                crate::app::set_volume(volume.at(volume.shown() + step), true);
+            })
+            .child(
+                ui::button(Variant::Ghost, Some(glyph), None, false)
+                    .on_press(move |_| crate::app::set_volume(volume.toggled(), true)),
+            )
+            .child(
+                // A tall, invisible hit area around the thin line, as on the progress bar.
+                rect()
+                    .width(Size::px(96.))
+                    .height(Size::px(24.))
+                    .main_align(Alignment::Center)
+                    .on_sized(move |event: Event<SizedEventData>| area.set(event.area))
+                    .on_pointer_down(move |event: Event<PointerEventData>| {
+                        event.stop_propagation();
+                        held.set(true);
+                        crate::app::set_volume(at(event.element_location().x), false);
+                    })
+                    .on_global_pointer_move(move |event: Event<PointerEventData>| {
+                        if *held.peek() {
+                            let x = event.global_location().x - area.peek().min_x() as f64;
+                            crate::app::set_volume(at(x), false);
+                        }
+                    })
+                    .on_global_pointer_up(move |_: Event<PointerEventData>| {
+                        if *held.peek() {
+                            held.set(false);
+                            crate::app::set_volume(volume, true);
+                        }
+                    })
+                    .padding((0., 6.))
+                    .child(
+                        rect()
+                            .width(Size::fill())
+                            .height(Size::px(match *held.read() {
+                                true => 6.,
+                                false => 4.,
+                            }))
+                            .corner_radius(3.)
+                            .background(color::MUTED)
+                            .child(
+                                rect()
+                                    .width(Size::percent(shown * 100.))
+                                    .height(Size::fill())
+                                    .corner_radius(3.)
+                                    .background(color::PROGRESS),
+                            ),
+                    ),
+            )
     }
 }
 

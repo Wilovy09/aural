@@ -261,7 +261,9 @@ pub fn command(remote: &Remote) -> Option<crate::engine::Command> {
             to: *to,
         },
         Remote::Enqueue { song } => Command::Enqueue(song.clone()),
+        Remote::PlayNext { song } => Command::PlayNext(song.clone()),
         Remote::Remove { at } => Command::Remove(*at),
+        Remote::Jump { at } => Command::Jump(*at),
         Remote::Shuffle { .. } | Remote::Repeat { .. } | Remote::Night => return None,
     })
 }

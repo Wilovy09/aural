@@ -12,6 +12,7 @@ mod images;
 mod library;
 mod login;
 mod media;
+mod menu;
 mod nav;
 mod platform;
 mod probe;
@@ -21,6 +22,8 @@ mod session;
 mod settings;
 mod sheets;
 mod state;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod tray;
 mod stream;
 mod ui;
 
@@ -71,7 +74,10 @@ pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     #[cfg(target_os = "ios")]
     platform::audio_session();
-    launch(launch_config());
+    let config = launch_config();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let config = tray::add(config);
+    launch(config);
 }
 
 /// Ends the process at once. `exit` would first run the native libraries' exit handlers, and

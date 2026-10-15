@@ -46,6 +46,8 @@ pub struct Library {
     pub liked: Vec<Song>,
     pub playlists: Vec<Collection>,
     pub albums: Vec<Collection>,
+    /// The playlists the account owns, which songs can be added to.
+    pub editable: Vec<String>,
 }
 
 /// Loads liked songs, playlists and albums together. A part that fails stays empty.
@@ -58,7 +60,14 @@ pub async fn load(api: &YtMusic) -> Result<Library> {
     if let (Err(error), Err(_), Err(_)) = (&liked, &playlists, &albums) {
         anyhow::bail!("cannot load the library: {error:#}");
     }
+    let editable = playlists
+        .iter()
+        .flatten()
+        .filter(|playlist| playlist.owned)
+        .map(|playlist| playlist.id.clone())
+        .collect();
     Ok(Library {
+        editable,
         liked: liked
             .unwrap_or_default()
             .into_iter()
@@ -94,6 +103,70 @@ pub async fn load(api: &YtMusic) -> Result<Library> {
             })
             .collect(),
     })
+}
+
+/// Who can see a playlist, as YouTube Music offers it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Privacy {
+    #[default]
+    Public,
+    Unlisted,
+    Private,
+}
+
+impl Privacy {
+    pub const ALL: [Privacy; 3] = [Privacy::Public, Privacy::Unlisted, Privacy::Private];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Privacy::Public => "Pública",
+            Privacy::Unlisted => "No listada",
+            Privacy::Private => "Privada",
+        }
+    }
+
+    pub fn hint(self) -> &'static str {
+        match self {
+            Privacy::Public => "Cualquier usuario puede buscarla y verla",
+            Privacy::Unlisted => "Cualquier persona con el vínculo puede verla",
+            Privacy::Private => "Solo tú puedes verla",
+        }
+    }
+
+    fn status(self) -> &'static str {
+        match self {
+            Privacy::Public => "PUBLIC",
+            Privacy::Unlisted => "UNLISTED",
+            Privacy::Private => "PRIVATE",
+        }
+    }
+}
+
+/// Creates a playlist in the account, returning its id.
+pub async fn create_playlist(
+    api: &YtMusic,
+    title: &str,
+    description: &str,
+    privacy: Privacy,
+) -> Result<String> {
+    use anyhow::Context as _;
+
+    let response = api
+        .execute(
+            "playlist/create",
+            ytmusic::Client::Music,
+            serde_json::json!({
+                "title": title,
+                "description": description,
+                "privacyStatus": privacy.status(),
+            }),
+        )
+        .await?;
+    response
+        .get("playlistId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .context("the new playlist came back without an id")
 }
 
 /// What a search found, in Sonora's three columns plus its best match.
@@ -224,15 +297,16 @@ async fn search_artists(api: &YtMusic, query: &str) -> Result<Vec<Collection>> {
     Ok(artists)
 }
 
-/// The songs of a playlist or an album.
-pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<Vec<Song>> {
+/// The songs of a playlist or an album, and for an album the playlist behind it, which saving
+/// it to the library rates.
+pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<(Vec<Song>, Option<String>)> {
     let tracks = match collection.kind {
         Kind::Playlist => api.playlist(&collection.id).await?.tracks,
         Kind::Artist => api.artist(&collection.id).await?.top_tracks,
         Kind::Album => {
             let detail = api.album(&collection.id).await?;
             let art = cover(&detail.album.thumbnails);
-            return Ok(detail
+            let songs = detail
                 .tracks
                 .into_iter()
                 .filter_map(song)
@@ -242,10 +316,11 @@ pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<Vec<Song>>
                     song.album = song.album.or_else(|| Some(detail.album.title.clone()));
                     song
                 })
-                .collect());
+                .collect();
+            return Ok((songs, detail.album.playlist_id));
         }
     };
-    Ok(tracks.into_iter().filter_map(song).collect())
+    Ok((tracks.into_iter().filter_map(song).collect(), None))
 }
 
 /// A track that can be played: it needs a video id.
@@ -462,32 +537,115 @@ impl Pick {
     }
 }
 
+/// How a shelf of the home feed is laid out, as YouTube Music lays it out.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Look {
+    /// A row of square covers (an artist's round).
+    #[default]
+    Cards,
+    /// A row of wide video stills.
+    Videos,
+    /// A grid of songs as short rows, like "Quick picks".
+    List,
+}
+
 /// A shelf of the home feed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HomeShelf {
     pub title: String,
     pub picks: Vec<Pick>,
+    /// The line over the title: the account's name over "Listen again", "Similar to" over an
+    /// artist's name.
+    pub strapline: Option<String>,
+    /// The picture beside the strapline: the account's, or the artist's.
+    pub avatar: Option<String>,
+    pub look: Look,
+    /// Whether YouTube Music offers to play the whole shelf.
+    pub playable: bool,
 }
 
-/// YouTube Music's home feed for the account: its shelves, top to bottom.
-pub async fn home(api: &YtMusic) -> Result<Vec<HomeShelf>> {
+/// A mood or activity that narrows the home feed, as the chips atop YouTube Music's home.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mood {
+    pub title: String,
+    /// What the feed is asked with to narrow it.
+    pub params: String,
+}
+
+/// The home feed: its moods and its shelves, top to bottom.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Feed {
+    pub moods: Vec<Mood>,
+    pub shelves: Vec<HomeShelf>,
+}
+
+/// How many pages of the home feed are read: YouTube Music sends it a few shelves at a time.
+const HOME_PAGES: usize = 10;
+/// How many songs a list shelf shows, as YouTube Music's grid of four rows.
+const LIST_PICKS: usize = 12;
+
+/// YouTube Music's home feed for the account, narrowed to the mood whose `params` are given.
+/// Every page of it, so it has all the shelves the app shows.
+pub async fn home(api: &YtMusic, mood: Option<&str>) -> Result<Feed> {
     use ytmusic::nav::Nav as _;
     use ytmusic::parse;
 
-    let response = api
-        .execute(
-            "browse",
-            ytmusic::Client::Music,
-            serde_json::json!({ "browseId": "FEmusic_home" }),
-        )
-        .await?;
+    let mut body = serde_json::json!({ "browseId": "FEmusic_home" });
+    if let Some(params) = mood {
+        body["params"] = params.into();
+    }
+    let first = api.execute("browse", ytmusic::Client::Music, body).await?;
+    let moods = parse::find_renderers(&first, "chipCloudChipRenderer")
+        .into_iter()
+        .filter_map(|chip| {
+            let title = chip.run_text(&["text"])?;
+            let params = chip.str_at(&["navigationEndpoint", "browseEndpoint", "params"])?;
+            // Aural plays no podcasts.
+            (title != "Podcasts").then(|| Mood {
+                title: mood_title(&title),
+                params: params.to_owned(),
+            })
+        })
+        .collect();
+
     let mut shelves = Vec::new();
-    for carousel in parse::find_renderers(&response, "musicCarouselShelfRenderer") {
-        let title = carousel
-            .run_text(&["header", "musicCarouselShelfBasicHeaderRenderer", "title"])
-            .unwrap_or_default();
-        let picks: Vec<Pick> = carousel
-            .items(&["contents"])
+    let mut page = Some(first);
+    let mut read = 0;
+    while let Some(response) = page.take() {
+        shelves.extend(home_shelves(&response));
+        read += 1;
+        let Some(token) = next_page(&response).filter(|_| read < HOME_PAGES) else {
+            break;
+        };
+        match api
+            .execute(
+                "browse",
+                ytmusic::Client::Music,
+                serde_json::json!({ "continuation": token }),
+            )
+            .await
+        {
+            Ok(next) => page = Some(next),
+            // The shelves already read still make a home.
+            Err(error) => log::warn!("home: cannot read page {}: {error:#}", read + 1),
+        }
+    }
+    Ok(Feed { moods, shelves })
+}
+
+/// The shelves of one page of the home feed.
+fn home_shelves(response: &serde_json::Value) -> Vec<HomeShelf> {
+    use ytmusic::nav::Nav as _;
+    use ytmusic::parse;
+
+    let mut shelves = Vec::new();
+    for carousel in parse::find_renderers(response, "musicCarouselShelfRenderer") {
+        let Some(header) = carousel.at(&["header", "musicCarouselShelfBasicHeaderRenderer"]) else {
+            continue;
+        };
+        let title = header.run_text(&["title"]).unwrap_or_default();
+        let items = carousel.items(&["contents"]);
+        let mut picks: Vec<Pick> = items
             .iter()
             .filter_map(|item| {
                 parse::list_item_track(item)
@@ -496,15 +654,73 @@ pub async fn home(api: &YtMusic) -> Result<Vec<HomeShelf>> {
                     .or_else(|| shelf_item(item).map(Pick::Collection))
                     .or_else(|| two_row_song(item).map(Pick::Song))
             })
+            // Aural plays no podcasts.
+            .filter(|pick| !matches!(pick, Pick::Collection(it) if it.id.starts_with("MPSP")))
             .collect();
-        if !title.is_empty() && !picks.is_empty() {
-            shelves.push(HomeShelf {
-                title: shelf_title(&title),
-                picks,
-            });
+        let look = match items.first() {
+            Some(item) if item.at(&["musicResponsiveListItemRenderer"]).is_some() => Look::List,
+            _ if !items.is_empty()
+                && items.iter().all(|item| {
+                    item.str_at(&["musicTwoRowItemRenderer", "aspectRatio"])
+                        .is_some_and(|ratio| ratio.ends_with("16_9"))
+                }) =>
+            {
+                Look::Videos
+            }
+            _ => Look::Cards,
+        };
+        if look == Look::List {
+            picks.truncate(LIST_PICKS);
         }
+        if title.is_empty() || picks.is_empty() {
+            continue;
+        }
+        let strapline = header
+            .run_text(&["strapline"])
+            .filter(|line| !line.is_empty());
+        shelves.push(HomeShelf {
+            title: shelf_title(&title),
+            picks,
+            avatar: strapline
+                .is_some()
+                .then(|| cover(&parse::thumbnails(header)))
+                .flatten(),
+            strapline: strapline.map(|line| shelf_title(&line)),
+            look,
+            playable: header
+                .run_text(&["moreContentButton", "buttonRenderer", "text"])
+                .is_some_and(|text| text == "Play all"),
+        });
     }
-    Ok(shelves)
+    shelves
+}
+
+/// The token that asks for the home feed's next page, while there is one.
+fn next_page(response: &serde_json::Value) -> Option<String> {
+    use ytmusic::nav::Nav as _;
+    use ytmusic::parse;
+
+    parse::find_renderers(response, "nextContinuationData")
+        .into_iter()
+        .find_map(|data| data.str_at(&["continuation"]).map(str::to_owned))
+}
+
+/// The moods YouTube Music sends in English, in Spanish.
+fn mood_title(title: &str) -> String {
+    match title {
+        "Commute" => "Viaje diario",
+        "Party" => "Fiesta",
+        "Energize" => "Actívate",
+        "Feel good" => "Para sentirte bien",
+        "Romance" => "Romance",
+        "Sad" => "Triste",
+        "Focus" => "Concentración",
+        "Workout" => "Entrenamiento",
+        "Relax" => "Relajación",
+        "Sleep" => "Sueño",
+        other => other,
+    }
+    .to_owned()
 }
 
 /// A song shown as a large card (a two-row item that plays rather than opens).
@@ -581,6 +797,14 @@ fn shelf_title(title: &str) -> String {
         "Long listening" => "Para escuchar largo rato".into(),
         "From the community" => "De la comunidad".into(),
         "Trending" => "Tendencias".into(),
+        "Your daily discover" => "Tus descubrimientos diarios".into(),
+        "Fresh finds, old favorites" => "Lo nuevo y lo que más te gusta".into(),
+        "Indie & alternative" => "Indie y alternativa".into(),
+        "Trending community playlists" => "Playlists del momento en la comunidad".into(),
+        "Music videos" => "Videos musicales".into(),
+        "Recaps" => "Resúmenes".into(),
+        "Take it easy" => "Tómalo con calma".into(),
+        "Mixes for you" => "Mixes para ti".into(),
         other => match other.strip_prefix("Playlists by ") {
             Some(artist) => format!("{artist} hizo estas playlists"),
             None => other.to_owned(),

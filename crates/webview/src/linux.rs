@@ -470,16 +470,26 @@ fn load() -> Option<Api> {
         let handle =
             unsafe { libc::dlopen(soname.as_ptr().cast(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
         if handle.is_null() {
+            // SAFETY: dlerror reports the dlopen that just failed on this thread.
+            let why = unsafe { text(libc::dlerror()) }.unwrap_or_default();
+            log::info!(
+                "webview: cannot load {}: {why}",
+                soname.trim_end_matches('\0')
+            );
             continue;
         }
         match unsafe { Api::load(handle) } {
-            Some(api) => return Some(api),
+            Some(api) => {
+                log::debug!("webview: loaded {}", soname.trim_end_matches('\0'));
+                return Some(api);
+            }
             None => log::warn!(
                 "webview: {} is missing symbols the sign-in window needs",
                 soname.trim_end_matches('\0')
             ),
         }
     }
+    log::warn!("webview: no webkit2gtk found, install webkit2gtk-4.1 for the sign-in window");
     None
 }
 
