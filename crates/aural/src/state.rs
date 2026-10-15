@@ -252,6 +252,8 @@ pub struct AppState {
     /// The home feed's shelves.
     pub home: Load<Vec<crate::library::HomeShelf>>,
     pub detail: Load<Vec<Song>>,
+    /// The playlist behind the album on screen, which saving it to the library rates.
+    pub album_playlist: Option<String>,
     pub artist: Load<crate::library::ArtistPage>,
     pub page: Page,
     /// Pages to return to with Back.
@@ -326,6 +328,13 @@ impl Default for Page {
 
 impl AppState {
     /// Whether the account likes the song `id`.
+    /// Whether the album `id` is saved in the library.
+    pub fn saved(&self, id: &str) -> bool {
+        self.library
+            .ready()
+            .is_some_and(|library| library.albums.iter().any(|album| album.id == id))
+    }
+
     pub fn liked(&self, id: &str) -> bool {
         self.library
             .ready()
@@ -371,6 +380,7 @@ impl AppState {
     /// How many header buttons the page has.
     pub fn actions(&self) -> usize {
         match &self.page {
+            Page::Detail(collection) if collection.kind == crate::library::Kind::Album => 3,
             Page::Songs | Page::Detail(_) => 2,
             Page::Account => 3,
             Page::Artist(_) => 2,

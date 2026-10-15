@@ -1,5 +1,6 @@
-//! The queue panel of the fullscreen player, after Sonora's: the song playing now, then what
-//! comes next in play order (shuffled when shuffle is on).
+//! The queue panel of the fullscreen player, after YouTube Music's: the whole queue in play
+//! order (shuffled when shuffle is on), the songs already played dimmed above the one playing.
+//! Any song plays when pressed; the ones coming up also move and leave the queue.
 
 use freya::prelude::*;
 use freya::radio::use_radio;
@@ -12,6 +13,8 @@ use crate::ui::{self, Cover, Icon, color, metrics, text};
 const ROW: f32 = 58.;
 /// Side of a row's cover.
 const THUMB: f32 = 40.;
+/// How dim the songs already played are.
+const PLAYED: f32 = 0.5;
 
 #[derive(PartialEq)]
 pub struct QueuePanel;
@@ -20,20 +23,22 @@ impl Component for QueuePanel {
     fn render(&self) -> impl IntoElement {
         let now = use_radio::<AppState, Channel>(Channel::Now);
         let state = now.read();
-        let current = state.now.queue.get(state.now.index).cloned();
-        let upcoming: Vec<Song> = state
-            .now
-            .queue
-            .iter()
-            .skip(state.now.index + 1)
-            .cloned()
-            .collect();
-        // Where the first song coming up sits in the queue.
-        let first = state.now.index + 1;
+        let queue = state.now.queue.clone();
+        let index = state.now.index;
         drop(state);
-        let count = upcoming.len();
+        let count = queue.len();
         let moving = use_state(|| None::<Moving>);
-        let scroll = use_scroll_controller(ScrollConfig::default);
+        let mut scroll = use_scroll_controller(ScrollConfig::default);
+        // Opening the queue, or moving on to another song, brings the song playing near the
+        // top, the one before it showing above.
+        let mut shown = use_state(|| None::<usize>);
+        use_side_effect(move || {
+            let index = now.read().now.index;
+            if *shown.peek() != Some(index) {
+                shown.set(Some(index));
+                scroll.scroll_to_y(-(index.saturating_sub(1) as f32 * ROW) as i32);
+            }
+        });
 
         rect()
             .width(Size::fill())
@@ -41,20 +46,7 @@ impl Component for QueuePanel {
             .padding((24., 0., 0., 0.))
             .spacing(10.)
             .content(Content::Flex)
-            .child(ui::eyebrow("Sonando ahora").color(color::ON_BACKDROP))
-            .map(current, |panel, song| panel.child(row(0, &song, true)))
-            .child(
-                ui::eyebrow("A continuación")
-                    .color(color::ON_BACKDROP)
-                    .margin((14., 0., 0., 0.)),
-            )
-            .maybe(count == 0, |panel| {
-                panel.child(ui::line(
-                    "No hay más canciones en la cola",
-                    text::BODY,
-                    color::ON_BACKDROP,
-                ))
-            })
+            .child(ui::eyebrow("Cola").color(color::ON_BACKDROP))
             .child(
                 rect().width(Size::fill()).height(Size::flex(1.)).child(
                     // A finger scrolls through `TouchScroll`, which leaves sideways swipes and
@@ -62,17 +54,22 @@ impl Component for QueuePanel {
                     ui::touch_scroll::TouchScroll {
                         scroll,
                         content: VirtualScrollView::new_with_data_controlled(
-                            (upcoming, first, moving),
-                            |item, (upcoming, first, moving)| {
-                                let index = item.index;
-                                Movable {
-                                    at: first + index,
-                                    song: upcoming[index].clone(),
-                                    moving: *moving,
-                                    first: *first,
-                                    last: first + upcoming.len() - 1,
+                            (queue, index, moving),
+                            |item, (queue, index, moving)| {
+                                let at = item.index;
+                                let song = &queue[at];
+                                match at.cmp(index) {
+                                    std::cmp::Ordering::Less => played(at, song).into_element(),
+                                    std::cmp::Ordering::Equal => row(at, song, true).into_element(),
+                                    std::cmp::Ordering::Greater => Movable {
+                                        at,
+                                        song: song.clone(),
+                                        moving: *moving,
+                                        first: index + 1,
+                                        last: queue.len() - 1,
+                                    }
+                                    .into_element(),
                                 }
-                                .into_element()
                             },
                             scroll,
                         )
@@ -86,7 +83,35 @@ impl Component for QueuePanel {
                     },
                 ),
             )
+            .maybe(index + 1 >= count, |panel| {
+                panel.child(ui::line(
+                    "No hay más canciones en la cola",
+                    text::BODY,
+                    color::ON_BACKDROP,
+                ))
+            })
     }
+}
+
+/// Plays the song at `at` when pressed, unless the press ends a swipe.
+fn play_at(at: usize) -> impl FnMut(Event<PressEventData>) + 'static {
+    move |event: Event<PressEventData>| {
+        event.stop_propagation();
+        if !ui::swipe::just_swiped() {
+            crate::app::play_at(at);
+        }
+    }
+}
+
+/// A song already played, dimmed: pressed, it plays again from there.
+fn played(at: usize, song: &Song) -> impl IntoElement {
+    rect()
+        .key(at)
+        .width(Size::fill())
+        .height(Size::px(ROW))
+        .opacity(PLAYED)
+        .on_press(play_at(at))
+        .child(row(at, song, false))
 }
 
 /// A song being moved by its grip: where it was, where it would land, and where the pointer
@@ -195,6 +220,7 @@ impl Component for Movable {
             .child(
                 rect()
                     .width(Size::flex(1.))
+                    .on_press(play_at(at))
                     .child(row(at, &self.song, false)),
             )
             .child(grip);
@@ -221,6 +247,12 @@ impl Component for Movable {
 fn row(key: usize, song: &Song, current: bool) -> impl IntoElement {
     rect()
         .key(key)
+        .on_secondary_down({
+            let song = song.clone();
+            move |event: Event<PressEventData>| {
+                crate::menu::open(song.clone(), crate::menu::location(&event))
+            }
+        })
         .height(Size::px(ROW))
         .width(Size::fill())
         .padding((0., 10.))

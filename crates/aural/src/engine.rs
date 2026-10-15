@@ -58,8 +58,12 @@ pub enum Command {
     /// Add a song to the queue: after the song playing and the songs added before it, or on
     /// its own when nothing plays.
     Enqueue(Song),
+    /// Add a song right after the song playing, ahead of the songs added before it.
+    PlayNext(Song),
     /// Take the song at this place out of the queue (not the one playing).
     Remove(usize),
+    /// Play the song at this place in the queue, before or after the one playing.
+    Jump(usize),
     /// Play the music this loud, apart from the device's own volume.
     Volume(Volume),
 }
@@ -309,6 +313,8 @@ fn run(
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         };
         let mut jump: Option<usize> = None;
+        // Played next is added like any song, only at the front of the songs added.
+        let next = matches!(command, Some(Command::PlayNext(_)));
         match command {
             Some(Command::Play {
                 queue: next,
@@ -377,14 +383,18 @@ fn run(
                     say(Update::Queue(queue.clone(), index));
                 }
             }
-            Some(Command::Enqueue(song)) => {
+            Some(Command::Enqueue(song) | Command::PlayNext(song)) => {
                 if queue.is_empty() {
                     original = vec![song.clone()];
                     queue = vec![song];
                     added = 0;
                     jump = Some(0);
                 } else {
-                    let at = (index + 1 + added).min(queue.len());
+                    let at = match next {
+                        true => index + 1,
+                        false => index + 1 + added,
+                    }
+                    .min(queue.len());
                     queue.insert(at, song.clone());
                     match shuffled {
                         true => original.push(song),
@@ -397,6 +407,8 @@ fn run(
                     say(Update::Queue(queue.clone(), index));
                 }
             }
+            Some(Command::Jump(at)) if at < queue.len() => jump = Some(at),
+            Some(Command::Jump(_)) => {}
             Some(Command::Remove(at)) => {
                 if at < queue.len() && at != index {
                     let song = queue.remove(at);

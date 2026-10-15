@@ -46,6 +46,8 @@ pub struct Library {
     pub liked: Vec<Song>,
     pub playlists: Vec<Collection>,
     pub albums: Vec<Collection>,
+    /// The playlists the account owns, which songs can be added to.
+    pub editable: Vec<String>,
 }
 
 /// Loads liked songs, playlists and albums together. A part that fails stays empty.
@@ -58,7 +60,14 @@ pub async fn load(api: &YtMusic) -> Result<Library> {
     if let (Err(error), Err(_), Err(_)) = (&liked, &playlists, &albums) {
         anyhow::bail!("cannot load the library: {error:#}");
     }
+    let editable = playlists
+        .iter()
+        .flatten()
+        .filter(|playlist| playlist.owned)
+        .map(|playlist| playlist.id.clone())
+        .collect();
     Ok(Library {
+        editable,
         liked: liked
             .unwrap_or_default()
             .into_iter()
@@ -224,15 +233,16 @@ async fn search_artists(api: &YtMusic, query: &str) -> Result<Vec<Collection>> {
     Ok(artists)
 }
 
-/// The songs of a playlist or an album.
-pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<Vec<Song>> {
+/// The songs of a playlist or an album, and for an album the playlist behind it, which saving
+/// it to the library rates.
+pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<(Vec<Song>, Option<String>)> {
     let tracks = match collection.kind {
         Kind::Playlist => api.playlist(&collection.id).await?.tracks,
         Kind::Artist => api.artist(&collection.id).await?.top_tracks,
         Kind::Album => {
             let detail = api.album(&collection.id).await?;
             let art = cover(&detail.album.thumbnails);
-            return Ok(detail
+            let songs = detail
                 .tracks
                 .into_iter()
                 .filter_map(song)
@@ -242,10 +252,11 @@ pub async fn tracks(api: &YtMusic, collection: &Collection) -> Result<Vec<Song>>
                     song.album = song.album.or_else(|| Some(detail.album.title.clone()));
                     song
                 })
-                .collect());
+                .collect();
+            return Ok((songs, detail.album.playlist_id));
         }
     };
-    Ok(tracks.into_iter().filter_map(song).collect())
+    Ok((tracks.into_iter().filter_map(song).collect(), None))
 }
 
 /// A track that can be played: it needs a video id.

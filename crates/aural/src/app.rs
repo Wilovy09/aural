@@ -106,7 +106,9 @@ fn player(station: Station, engine: &Engine, command: Command) {
         Command::Repeat(mode) => crate::connect::Remote::Repeat { mode },
         Command::Move { from, to } => crate::connect::Remote::Move { from, to },
         Command::Enqueue(song) => crate::connect::Remote::Enqueue { song },
+        Command::PlayNext(song) => crate::connect::Remote::PlayNext { song },
         Command::Remove(at) => crate::connect::Remote::Remove { at },
+        Command::Jump(at) => crate::connect::Remote::Jump { at },
         // The volume is this device's: a controller's slider sets its own music's.
         Command::Client(_) | Command::Volume(_) => return engine.send(command),
     };
@@ -417,6 +419,7 @@ pub fn app() -> impl IntoElement {
             },
         ))
         .child(crate::screens::pairing::PairingCode)
+        .child(crate::menu::MenuLayer)
         .child(crate::chrome::toast::Notice)
 }
 
@@ -574,6 +577,7 @@ fn perform(station: Station, engine: &Engine, action: Action) {
         Action::EditField => crate::screens::devices::edit(),
         Action::Go(_) => {}
         Action::Open(collection) => open(station, collection),
+        Action::ToggleSave(album) => toggle_save(station, album),
         Action::SeekBy(seconds) => {
             let position = station.peek().position;
             let to = match seconds < 0 {
@@ -728,6 +732,101 @@ pub fn enqueue(song: library::Song) {
     toast(station, "Agregado a la cola", true);
 }
 
+/// For a song's menu: whether `id` is liked, and the account's playlists it can be added to.
+pub fn menu_facts(id: &str) -> (bool, Vec<Collection>) {
+    TAPS.with_borrow(|taps| {
+        let Some((station, _)) = taps else {
+            return (false, Vec::new());
+        };
+        let state = station.peek();
+        let playlists = state.library.ready().map_or_else(Vec::new, |library| {
+            library
+                .playlists
+                .iter()
+                .filter(|playlist| library.editable.contains(&playlist.id))
+                .cloned()
+                .collect()
+        });
+        (state.liked(id), playlists)
+    })
+}
+
+/// Puts `song` right after the one playing, on the player that plays.
+pub fn play_next(song: library::Song) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    player(station, &engine, Command::PlayNext(song));
+    toast(station, "Suena a continuación", true);
+}
+
+/// Plays a mix that starts at `song`: YouTube Music's radio of it.
+pub fn start_mix(song: library::Song) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    spawn_in_window(async move {
+        let api = client();
+        let id = song.id.clone();
+        let radio = runtime::spawn(async move { api.track_radio(&id).await }).await;
+        let mut queue: Vec<library::Song> =
+            match radio.map_err(anyhow::Error::from).and_then(|radio| radio) {
+                Ok(tracks) => tracks.into_iter().filter_map(library::song).collect(),
+                Err(error) => {
+                    log::warn!("library: cannot start a mix: {error:#}");
+                    return toast(station, "No se pudo comenzar el mix", false);
+                }
+            };
+        // The mix starts with the song it was made from.
+        queue.retain(|it| it.id != song.id);
+        queue.insert(0, song);
+        player(station, &engine, Command::Play { queue, index: 0 });
+    });
+}
+
+/// Adds `song` to the account's playlist `playlist`.
+pub fn add_to_playlist(song: library::Song, playlist: Collection) {
+    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    spawn_in_window(async move {
+        let api = client();
+        let id = playlist.id.clone();
+        let sent = runtime::spawn(async move { api.add_playlist_track(&id, &song.id).await }).await;
+        match sent.map_err(anyhow::Error::from).and_then(|sent| sent) {
+            Ok(()) => toast(station, &format!("Agregada a {}", playlist.title), false),
+            Err(error) => {
+                log::warn!("library: cannot add to {}: {error:#}", playlist.title);
+                toast(
+                    station,
+                    &format!("No se pudo agregar a {}", playlist.title),
+                    false,
+                );
+            }
+        }
+    });
+}
+
+/// Copies `song`'s YouTube Music link.
+pub fn share(song: &library::Song) {
+    let Some((station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    let link = format!("https://music.youtube.com/watch?v={}", song.id);
+    match freya::prelude::Clipboard::set(link) {
+        Ok(()) => toast(station, "Enlace copiado", false),
+        Err(error) => log::warn!("share: cannot copy the link: {error:?}"),
+    }
+}
+
+/// Plays the song at `at` in the queue, on the player that plays.
+pub fn play_at(at: usize) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    player(station, &engine, Command::Jump(at));
+}
+
 /// Takes the song at `at` out of the queue of the player that plays.
 pub fn remove_from_queue(at: usize) {
     let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
@@ -842,7 +941,11 @@ fn open(mut station: Station, collection: Collection) {
     if collection.kind == library::Kind::Artist {
         return open_artist(station, collection);
     }
-    station.write_channel(Channel::Detail).detail = Load::Loading;
+    {
+        let mut state = station.write_channel(Channel::Detail);
+        state.detail = Load::Loading;
+        state.album_playlist = None;
+    }
     spawn_in_window(async move {
         let api = client();
         let wanted = collection.clone();
@@ -851,11 +954,43 @@ fn open(mut station: Station, collection: Collection) {
         if !still_open {
             return;
         }
-        station.write_channel(Channel::Detail).detail = match loaded {
-            Ok(Ok(songs)) => Load::Ready(songs),
+        let mut state = station.write_channel(Channel::Detail);
+        state.detail = match loaded {
+            Ok(Ok((songs, playlist))) => {
+                state.album_playlist = playlist;
+                Load::Ready(songs)
+            }
             Ok(Err(error)) => Load::Failed(format!("{error:#}")),
             Err(error) => Load::Failed(error.to_string()),
         };
+    });
+}
+
+/// Saves `album` to the library or takes it out: shown at once, then sent to YouTube Music,
+/// and undone if YouTube refuses.
+fn toggle_save(mut station: Station, album: Collection) {
+    let Some(playlist) = station.peek().album_playlist.clone() else {
+        log::warn!("library: {} has no playlist to save", album.title);
+        return;
+    };
+    let saved = station.peek().saved(&album.id);
+    let flip = move |station: &mut Station, save: bool| {
+        let mut state = station.write_channel(Channel::Library);
+        if let Load::Ready(library) = &mut state.library {
+            library.albums.retain(|it| it.id != album.id);
+            if save {
+                library.albums.insert(0, album.clone());
+            }
+        }
+    };
+    flip(&mut station, !saved);
+    spawn_in_window(async move {
+        let api = client();
+        let sent = runtime::spawn(async move { api.rate_playlist(&playlist, !saved).await }).await;
+        if let Ok(Err(error)) | Err(error) = sent.map_err(anyhow::Error::from) {
+            log::warn!("library: cannot save the album: {error:#}");
+            flip(&mut station, saved);
+        }
     });
 }
 

@@ -18,6 +18,8 @@ pub enum Action {
         index: usize,
     },
     Shuffle(Vec<Song>),
+    /// Saves the album to the library, or takes it out.
+    ToggleSave(Collection),
     Toggle,
     Next,
     Previous,
@@ -380,6 +382,9 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
             crate::state::Auth::SignedIn(_) => Action::SignOut,
             _ => Action::SignIn,
         },
+        (Spot::Action(2), Page::Detail(album)) if album.kind == crate::library::Kind::Album => {
+            Action::ToggleSave(album.clone())
+        }
         (Spot::Action(button), _) => match state.songs() {
             Some(songs) if !songs.is_empty() && button == 0 => Action::Play {
                 queue: songs.to_vec(),

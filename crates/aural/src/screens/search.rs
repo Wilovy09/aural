@@ -513,6 +513,12 @@ impl View<'_> {
             (false, _) => song.artist.clone(),
         };
         let line = rect()
+            .on_secondary_down({
+                let song = song.clone();
+                move |event: Event<PressEventData>| {
+                    crate::menu::open(song.clone(), crate::menu::location(&event))
+                }
+            })
             .width(Size::fill())
             .height(Size::px(ROW))
             .padding((0., 10.))

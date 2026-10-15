@@ -154,6 +154,12 @@ pub enum Icon {
     VolumeMute,
     VolumeLow,
     VolumeHigh,
+    Mix,
+    PlayNext,
+    Enqueue,
+    AddToPlaylist,
+    Share,
+    More,
 }
 
 impl Icon {
@@ -204,6 +210,12 @@ impl Icon {
             Icon::VolumeMute => svg!("volume-x"),
             Icon::VolumeLow => svg!("volume-1"),
             Icon::VolumeHigh => svg!("volume-2"),
+            Icon::Mix => svg!("radio"),
+            Icon::PlayNext => svg!("list-start"),
+            Icon::Enqueue => svg!("list-end"),
+            Icon::AddToPlaylist => svg!("list-plus"),
+            Icon::Share => svg!("share"),
+            Icon::More => svg!("ellipsis-vertical"),
         }
     }
 }

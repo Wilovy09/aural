@@ -12,6 +12,7 @@ mod images;
 mod library;
 mod login;
 mod media;
+mod menu;
 mod nav;
 mod platform;
 mod probe;
