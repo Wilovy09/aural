@@ -30,6 +30,8 @@ pub fn connect(device: Device, events: Events) {
         if let Ok(mut held) = OUT.lock() {
             *held = None;
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        crate::discord::unlink();
         let _ = events.send(Event::Link(match result {
             Ok(()) => Link::Idle,
             Err(error) => {
@@ -82,6 +84,8 @@ async fn run(
                     ToController::Paired { token } => trust::keep_host(&device.id, &token),
                     ToController::Denied { reason } => anyhow::bail!("{reason}"),
                     ToController::State { state } => {
+                        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                        crate::discord::remote(&state);
                         let _ = events.send(Event::State(state));
                     }
                     ToController::Queue { queue, index } => {

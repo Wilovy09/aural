@@ -2,7 +2,8 @@
 //! it is, through the Discord app running on the same computer. Phones have no Discord app to
 //! talk to, so this is for the desktop only.
 //!
-//! It follows the engine's updates on the engine's own thread, as the media controls do, and
+//! It follows the engine's updates on the engine's own thread, as the media controls do, or,
+//! while this computer plays on another device through Aural Connect, that device's state. It
 //! talks to Discord from a thread of its own, since every message waits for Discord's answer.
 
 use std::collections::HashMap;
@@ -38,7 +39,7 @@ struct Activity {
     started: i64,
 }
 
-/// What the engine said last, to work the activity out of.
+/// What the engine, or the device played on, said last, to work the activity out of.
 struct Heard {
     song: Song,
     playing: bool,
@@ -64,6 +65,8 @@ struct Wanted {
 
 static ENABLED: AtomicBool = AtomicBool::new(true);
 static HEARD: Mutex<Option<Heard>> = Mutex::new(None);
+/// While playing on another device: what it plays, or `None` when it plays nothing.
+static REMOTE: Mutex<Option<Option<Heard>>> = Mutex::new(None);
 static WANTED: Mutex<Wanted> = Mutex::new(Wanted {
     change: 0,
     activity: None,
@@ -75,11 +78,37 @@ static WORKER: Once = Once::new();
 pub fn enable(enabled: bool) {
     log::info!("discord: activity {}", if enabled { "on" } else { "off" });
     ENABLED.store(enabled, Ordering::SeqCst);
-    let activity = HEARD
-        .lock()
-        .ok()
-        .and_then(|heard| heard.as_ref().and_then(Heard::activity));
-    want(activity);
+    want(current());
+}
+
+/// Follows the state of the device this computer plays on.
+pub fn remote(state: &crate::connect::protocol::Snapshot) {
+    let heard = state.song.as_ref().map(|song| Heard {
+        song: song.clone(),
+        playing: state.playing && !state.loading,
+        position: Duration::from_millis(state.elapsed_millis),
+        at: Instant::now(),
+    });
+    if let Ok(mut remote) = REMOTE.lock() {
+        *remote = Some(heard);
+    }
+    want(current());
+}
+
+/// Back to this computer's own playback, once the link to another device ends.
+pub fn unlink() {
+    if let Ok(mut remote) = REMOTE.lock() {
+        *remote = None;
+    }
+    want(current());
+}
+
+/// The activity of what plays: on the device linked to, or here.
+fn current() -> Option<Activity> {
+    if let Some(remote) = REMOTE.lock().ok()?.as_ref() {
+        return remote.as_ref().and_then(Heard::activity);
+    }
+    HEARD.lock().ok()?.as_ref().and_then(Heard::activity)
 }
 
 /// Follows one engine update. Runs on the engine's thread.
@@ -116,7 +145,8 @@ pub fn observe(update: &Update) {
         Update::Stopped => *heard = None,
         Update::Queue(..) | Update::Error(_) => return,
     }
-    want(heard.as_ref().and_then(Heard::activity));
+    drop(heard);
+    want(current());
 }
 
 /// Hands `activity` to the worker unless it already has it, or one that differs only by the
