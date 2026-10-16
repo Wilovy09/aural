@@ -31,6 +31,7 @@ pub enum Action {
     SignOut,
     ToggleMotion,
     ToggleDiscord,
+    ToggleAutoplay,
     ToggleShuffle,
     CycleRepeat,
     /// Give the search field the keyboard.
@@ -380,6 +381,7 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
         },
         (Spot::Action(1), Page::Account) => Action::ToggleMotion,
         (Spot::Action(3), Page::Account) => Action::ToggleDiscord,
+        (Spot::Action(4), Page::Account) => Action::ToggleAutoplay,
         (Spot::Action(_), Page::Account) => match state.auth {
             crate::state::Auth::SignedIn(_) => Action::SignOut,
             _ => Action::SignIn,
@@ -511,12 +513,14 @@ fn account(state: &mut AppState, press: Press) -> Action {
     let (text, interface) = (chosen(state.text), chosen(state.interface));
     let spot = state.focus.content;
     let next = match (spot, press) {
-        (Spot::Action(1), Press::Down) if DISCORD => Spot::Action(3),
-        (Spot::Action(1), Press::Down) => Spot::Cell(0, text),
-        (Spot::Action(3), Press::Up) => Spot::Action(1),
+        (Spot::Action(1), Press::Down) => Spot::Action(4),
+        (Spot::Action(4), Press::Up) => Spot::Action(1),
+        (Spot::Action(4), Press::Down) if DISCORD => Spot::Action(3),
+        (Spot::Action(4), Press::Down) => Spot::Cell(0, text),
+        (Spot::Action(3), Press::Up) => Spot::Action(4),
         (Spot::Action(3), Press::Down) => Spot::Cell(0, text),
         (Spot::Cell(0, _), Press::Up) if DISCORD => Spot::Action(3),
-        (Spot::Cell(0, _), Press::Up) => Spot::Action(1),
+        (Spot::Cell(0, _), Press::Up) => Spot::Action(4),
         (Spot::Cell(0, _), Press::Down) => Spot::Cell(1, interface),
         (Spot::Cell(1, _), Press::Up) => Spot::Cell(0, text),
         (Spot::Cell(1, _), Press::Down) => Spot::Action(2),
@@ -529,6 +533,7 @@ fn account(state: &mut AppState, press: Press) -> Action {
         (Spot::Cell(_, at), Press::Ok) => return Action::SetInterface(Scale::ALL[at]),
         (Spot::Action(1), Press::Ok) => return Action::ToggleMotion,
         (Spot::Action(3), Press::Ok) => return Action::ToggleDiscord,
+        (Spot::Action(4), Press::Ok) => return Action::ToggleAutoplay,
         (Spot::Action(2), Press::Ok) => {
             open_devices(state);
             return Action::None;

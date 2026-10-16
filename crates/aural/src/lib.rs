@@ -22,9 +22,9 @@ mod session;
 mod settings;
 mod sheets;
 mod state;
+mod stream;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod tray;
-mod stream;
 mod ui;
 
 use freya::prelude::*;

@@ -20,8 +20,9 @@ impl Component for Account {
         let light = now.read().now.light.unwrap_or(color::FOCUS_ON_PRIMARY);
         let state = navigation.read();
         let focus = state.focus;
-        let (motion, discord, text_size, interface, confirming) = (
+        let (motion, autoplay, discord, text_size, interface, confirming) = (
             state.motion,
+            state.autoplay,
             state.discord,
             state.text,
             state.interface,
@@ -82,6 +83,18 @@ impl Component for Account {
                                     switch(motion, light),
                                     on(Spot::Action(1)),
                                     Target::Content(Spot::Action(1)),
+                                    light,
+                                )
+                                .into_element(),
+                            ),
+                            Some(
+                                row(
+                                    Icon::Mix,
+                                    "Reproducción infinita",
+                                    "Al terminar un álbum o un mix, sigue con música similar",
+                                    switch(autoplay, light),
+                                    on(Spot::Action(4)),
+                                    Target::Content(Spot::Action(4)),
                                     light,
                                 )
                                 .into_element(),

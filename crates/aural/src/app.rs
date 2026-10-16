@@ -263,6 +263,7 @@ pub fn app() -> impl IntoElement {
         lyrics::set_language("es");
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         crate::discord::enable(settings.discord);
+        crate::engine::autoplay(settings.autoplay);
         AppState {
             motion: settings.motion,
             text: settings.text,
@@ -270,6 +271,7 @@ pub fn app() -> impl IntoElement {
             translate: settings.translate,
             discord: settings.discord,
             volume: settings.volume,
+            autoplay: settings.autoplay,
             ..AppState::default()
         }
     });
@@ -647,6 +649,13 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             state.motion = !state.motion;
             save_settings(&state);
         }
+        Action::ToggleAutoplay => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Navigation);
+            state.autoplay = !state.autoplay;
+            crate::engine::autoplay(state.autoplay);
+            save_settings(&state);
+        }
         Action::ToggleDiscord => {
             let mut station = station;
             let mut state = station.write_channel(Channel::Navigation);
@@ -926,6 +935,7 @@ fn save_settings(state: &AppState) {
         translate: state.translate,
         discord: state.discord,
         volume: state.volume,
+        autoplay: state.autoplay,
     });
 }
 
