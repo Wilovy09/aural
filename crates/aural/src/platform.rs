@@ -20,6 +20,22 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
+/// Where the app keeps what it can fetch again, such as covers: the system's cache folder on a
+/// computer, which the system may empty, and the app's private folder on a phone.
+pub fn cache_dir() -> PathBuf {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let dir = data_dir().join("cache");
+    // A second copy on one computer keeps its cache beside its data, as it does the rest.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let dir = match std::env::var_os("AURAL_DATA") {
+        Some(data) => PathBuf::from(data).join("cache"),
+        None => dirs::cache_dir()
+            .map(|dir| dir.join("aural"))
+            .unwrap_or_else(|| data_dir().join("cache")),
+    };
+    dir
+}
+
 /// Keeps the screen from dimming or starting the TV's screensaver while `awake`; lets it
 /// again otherwise. Called with whether music is playing.
 pub fn keep_awake(awake: bool) {

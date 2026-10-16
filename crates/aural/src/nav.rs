@@ -32,6 +32,8 @@ pub enum Action {
     ToggleMotion,
     ToggleDiscord,
     ToggleAutoplay,
+    /// Clears the covers kept and the cover lookups, once confirmed.
+    ClearCache,
     ToggleShuffle,
     CycleRepeat,
     /// Give the search field the keyboard.
@@ -154,6 +156,22 @@ pub fn tap(state: &mut AppState, target: Target, columns: usize) -> Action {
 /// Moves the focus for `press` and returns what else should happen. `columns` is how many
 /// cards a grid row holds right now.
 pub fn press(state: &mut AppState, press: Press, columns: usize) -> Action {
+    // The cache's confirmation holds the keys while it shows: left and right choose, OK does
+    // what is chosen, Back cancels.
+    if let Some(clear) = state.clearing {
+        match press {
+            Press::Left | Press::Right => state.clearing = Some(!clear),
+            Press::Ok => {
+                state.clearing = None;
+                if clear {
+                    return Action::ClearCache;
+                }
+            }
+            Press::Back => state.clearing = None,
+            Press::Up | Press::Down => {}
+        }
+        return Action::None;
+    }
     // Sign out asks twice; any other key between the two presses cancels it.
     let confirming = std::mem::take(&mut state.confirm_sign_out);
     if confirming
@@ -382,6 +400,7 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
         (Spot::Action(1), Page::Account) => Action::ToggleMotion,
         (Spot::Action(3), Page::Account) => Action::ToggleDiscord,
         (Spot::Action(4), Page::Account) => Action::ToggleAutoplay,
+        (Spot::Action(5), Page::Account) => Action::None,
         (Spot::Action(_), Page::Account) => match state.auth {
             crate::state::Auth::SignedIn(_) => Action::SignOut,
             _ => Action::SignIn,
@@ -525,8 +544,10 @@ fn account(state: &mut AppState, press: Press) -> Action {
         (Spot::Cell(1, _), Press::Up) => Spot::Cell(0, text),
         (Spot::Cell(1, _), Press::Down) => Spot::Action(2),
         (Spot::Action(2), Press::Up) => Spot::Cell(1, interface),
-        (Spot::Action(2), Press::Down) => Spot::Action(0),
-        (Spot::Action(0), Press::Up) => Spot::Action(2),
+        (Spot::Action(2), Press::Down) => Spot::Action(5),
+        (Spot::Action(5), Press::Up) => Spot::Action(2),
+        (Spot::Action(5), Press::Down) => Spot::Action(0),
+        (Spot::Action(0), Press::Up) => Spot::Action(5),
         (Spot::Cell(group, at), Press::Right) if at + 1 < sizes => Spot::Cell(group, at + 1),
         (Spot::Cell(group, at), Press::Left) if at > 0 => Spot::Cell(group, at - 1),
         (Spot::Cell(0, at), Press::Ok) => return Action::SetText(Scale::ALL[at]),
@@ -534,6 +555,10 @@ fn account(state: &mut AppState, press: Press) -> Action {
         (Spot::Action(1), Press::Ok) => return Action::ToggleMotion,
         (Spot::Action(3), Press::Ok) => return Action::ToggleDiscord,
         (Spot::Action(4), Press::Ok) => return Action::ToggleAutoplay,
+        (Spot::Action(5), Press::Ok) => {
+            state.clearing = Some(false);
+            return Action::None;
+        }
         (Spot::Action(2), Press::Ok) => {
             open_devices(state);
             return Action::None;

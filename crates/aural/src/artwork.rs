@@ -92,6 +92,21 @@ fn known() -> &'static Mutex<HashMap<String, Option<String>>> {
     })
 }
 
+/// What the remembered answers take on disk, in bytes.
+pub fn saved_size() -> u64 {
+    std::fs::metadata(file()).map_or(0, |meta| meta.len())
+}
+
+/// Forgets every answer, so each cover is asked for again, returning the bytes freed.
+pub fn forget() -> u64 {
+    let freed = saved_size();
+    if let Ok(mut known) = known().lock() {
+        known.clear();
+    }
+    let _ = std::fs::remove_file(file());
+    freed
+}
+
 fn file() -> std::path::PathBuf {
     platform::data_dir().join("artwork.json")
 }

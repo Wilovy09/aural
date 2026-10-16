@@ -166,6 +166,7 @@ pub enum Icon {
     Lock,
     Plus,
     ChevronDown,
+    Trash,
 }
 
 impl Icon {
@@ -227,6 +228,7 @@ impl Icon {
             Icon::Lock => svg!("lock"),
             Icon::Plus => svg!("plus"),
             Icon::ChevronDown => svg!("chevron-down"),
+            Icon::Trash => svg!("trash-2"),
         }
     }
 }

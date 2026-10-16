@@ -28,7 +28,15 @@ impl Component for Account {
             state.interface,
             state.confirm_sign_out,
         );
+        let (clearing, cache_size) = (state.clearing, state.cache_size);
         drop(state);
+        // What the cache takes, measured each time the page opens.
+        use_hook(crate::app::measure_cache);
+        let cache_hint = match cache_size {
+            Some(0) => "No hay nada guardado".to_owned(),
+            Some(bytes) => format!("Portadas guardadas: {}", crate::images::describe(bytes)),
+            None => "Calculando…".to_owned(),
+        };
         let on = |spot: Spot| focus.zone == Zone::Content && focus.content == spot;
         let account = match &auth.read().auth {
             Auth::SignedIn(Some(account)) => Some(account.clone()),
@@ -43,7 +51,7 @@ impl Component for Account {
             .unwrap_or_else(|| "YouTube Music".into());
         let photo = account.as_ref().and_then(|account| account.photo.clone());
 
-        ScrollView::new()
+        let page = ScrollView::new()
             // A phone scrolls under the finger, with no bar to drag.
             .show_scrollbar(!ui::compact())
             .width(Size::fill())
@@ -140,6 +148,21 @@ impl Component for Account {
                         ],
                     ))
                     .child(group(
+                        "Almacenamiento",
+                        vec![
+                            row(
+                                Icon::Trash,
+                                "Borrar caché",
+                                &cache_hint,
+                                ui::icon(Icon::Next, 16., color::FAINT).into_element(),
+                                on(Spot::Action(5)),
+                                Target::Content(Spot::Action(5)),
+                                light,
+                            )
+                            .into_element(),
+                        ],
+                    ))
+                    .child(group(
                         "Conexión",
                         vec![
                             row(
@@ -187,8 +210,117 @@ impl Component for Account {
                                     ),
                             ),
                     ),
-            )
+            );
+        rect()
+            .expanded()
+            .child(page)
+            .maybe_child(clearing.map(|clear| confirm_clear(clear, cache_size)))
     }
+}
+
+/// "¿Borrar la caché?": what goes and what stays, over the page. Cancelar starts chosen; the
+/// arrows move between the two buttons, OK does what is chosen and Back cancels.
+fn confirm_clear(clear: bool, size: Option<u64>) -> Element {
+    let (width, height) = ui::viewport();
+    let goes = match size {
+        Some(bytes) if bytes > 0 => format!(
+            "Se borrarán las portadas guardadas en este dispositivo ({}) y las búsquedas de portadas en Apple Music.",
+            crate::images::describe(bytes)
+        ),
+        _ => "Se borrarán las portadas guardadas en este dispositivo y las búsquedas de portadas en Apple Music.".to_owned(),
+    };
+    let button = |label: &str, chosen: bool, danger: bool| {
+        rect()
+            .height(Size::px(44.))
+            .padding((0., 20.))
+            .center()
+            .corner_radius(22.)
+            .background(match (chosen, danger) {
+                (true, true) => color::DANGER,
+                (true, false) => color::PRIMARY,
+                (false, _) => color::MUTED,
+            })
+            .border(
+                Border::new()
+                    .fill(match chosen && !ui::touch() {
+                        true => color::FOCUS,
+                        false => Color::TRANSPARENT,
+                    })
+                    .width(2.),
+            )
+            .child(
+                ui::line(
+                    label,
+                    text::BODY,
+                    match chosen {
+                        true => color::PRIMARY_FOREGROUND,
+                        false => color::FOREGROUND,
+                    },
+                )
+                .font_weight(FontWeight::SEMI_BOLD),
+            )
+    };
+    rect()
+        .layer(Layer::Overlay)
+        .position(Position::new_global().left(0.).top(0.))
+        .width(Size::px(width))
+        .height(Size::px(height))
+        .background(Color::from_argb(0xa0, 0, 0, 0))
+        .center()
+        .on_press(|event: Event<PressEventData>| {
+            event.stop_propagation();
+            crate::app::cancel_clearing();
+        })
+        .child(
+            rect()
+                .width(Size::px(460_f32.min(width - 32.)))
+                .padding(28.)
+                .spacing(16.)
+                .corner_radius(metrics::RADIUS_LG)
+                .background(color::RAISED)
+                .border(Border::new().fill(color::BORDER).width(1.))
+                .on_press(|event: Event<PressEventData>| event.stop_propagation())
+                .child(
+                    ui::line("¿Borrar la caché?", text::TITLE, color::FOREGROUND)
+                        .font_weight(FontWeight::BOLD),
+                )
+                .child(
+                    label()
+                        .text(goes)
+                        .font_size(text::BODY)
+                        .color(color::FOREGROUND)
+                        .width(Size::fill()),
+                )
+                .child(
+                    label()
+                        .text("Se volverán a descargar cuando las veas, así que al principio la app puede tardar un poco más en mostrarlas. Tu sesión, tus ajustes, tus Me gusta y tus dispositivos vinculados no se tocan.")
+                        .font_size(text::SMALL)
+                        .color(color::MUTED_FOREGROUND)
+                        .width(Size::fill()),
+                )
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .direction(Direction::Horizontal)
+                        .main_align(Alignment::End)
+                        .spacing(10.)
+                        .padding((8., 0., 0., 0.))
+                        .child(button("Cancelar", !clear, false).on_press(
+                            |event: Event<PressEventData>| {
+                                event.stop_propagation();
+                                crate::app::cancel_clearing();
+                            },
+                        ))
+                        .child(button("Borrar caché", clear, true).on_press(
+                            |event: Event<PressEventData>| {
+                                event.stop_propagation();
+                                crate::app::cancel_clearing();
+                                crate::app::act(crate::nav::Action::ClearCache);
+                            },
+                        )),
+                ),
+        )
+        .into_element()
 }
 
 /// The account's picture, or its initial on a disc lit by the cover playing.

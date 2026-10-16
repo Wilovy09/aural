@@ -654,6 +654,7 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             state.motion = !state.motion;
             save_settings(&state);
         }
+        Action::ClearCache => clear_cache(station),
         Action::ToggleAutoplay => {
             let mut station = station;
             let mut state = station.write_channel(Channel::Navigation);
@@ -784,6 +785,54 @@ pub fn menu_facts(id: &str) -> (bool, Vec<Collection>) {
         });
         (state.liked(id), playlists)
     })
+}
+
+/// Measures what the cache takes, for the account page.
+pub fn measure_cache() {
+    let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    spawn_in_window(async move {
+        let size = runtime::spawn(async {
+            tokio::task::spawn_blocking(|| {
+                crate::images::disk_size() + crate::artwork::saved_size()
+            })
+            .await
+            .unwrap_or(0)
+        })
+        .await
+        .unwrap_or(0);
+        station.write_channel(Channel::Navigation).cache_size = Some(size);
+    });
+}
+
+/// Closes the cache's confirmation, as its Cancelar does.
+pub fn cancel_clearing() {
+    if let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) {
+        station.write_channel(Channel::Navigation).clearing = None;
+    }
+}
+
+/// Clears the covers kept and the cover lookups, then says how much it freed.
+fn clear_cache(mut station: Station) {
+    spawn_in_window(async move {
+        let freed = runtime::spawn(async {
+            tokio::task::spawn_blocking(|| crate::images::clear() + crate::artwork::forget())
+                .await
+                .unwrap_or(0)
+        })
+        .await
+        .unwrap_or(0);
+        station.write_channel(Channel::Navigation).cache_size = Some(0);
+        toast(
+            station,
+            &format!(
+                "Caché borrada · se liberaron {}",
+                crate::images::describe(freed)
+            ),
+            false,
+        );
+    });
 }
 
 /// Performs `action` as a key or a tap would, as the tray's menu does.

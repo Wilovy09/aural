@@ -280,6 +280,11 @@ pub struct AppState {
     pub volume: crate::engine::Volume,
     /// Sign out was pressed once and waits for a second OK.
     pub confirm_sign_out: bool,
+    /// Clearing the cache waits to be confirmed: `Some(true)` with Borrar chosen, `Some(false)`
+    /// with Cancelar, which it starts on.
+    pub clearing: Option<bool>,
+    /// What the cache takes on disk, once measured.
+    pub cache_size: Option<u64>,
     pub now: Now,
     pub position: Position,
     pub sheet: Sheet,
@@ -387,7 +392,7 @@ impl AppState {
         match &self.page {
             Page::Detail(collection) if collection.kind == crate::library::Kind::Album => 3,
             Page::Songs | Page::Detail(_) => 2,
-            Page::Account => 5,
+            Page::Account => 6,
             Page::Artist(_) => 2,
             Page::Search => 2,
             Page::Devices => 1,
