@@ -61,6 +61,19 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET" "$SOURCE"
 
+# macOS 26 draws the icon from assets/AppIcon.icon (Icon Composer), with its own dark and
+# tinted looks instead of a grey one the system makes up. Xcode 26's actool compiles it into
+# Assets.car and writes an AppIcon.icns from it for older macOS, over the one above. Without
+# that actool, the .icns above is the icon.
+ICON_NAME=""
+xcrun actool assets/AppIcon.icon --compile "$APP/Contents/Resources" --platform macosx \
+  --minimum-deployment-target "$MACOSX_DEPLOYMENT_TARGET" --app-icon AppIcon \
+  --output-partial-info-plist "$OUT/icon.plist" >/dev/null 2>&1 || true
+if [ -f "$APP/Contents/Resources/Assets.car" ]; then
+  ICON_NAME="<key>CFBundleIconName</key><string>AppIcon</string>"
+fi
+rm -f "$OUT/icon.plist"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,6 +87,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  $ICON_NAME
   <key>LSMinimumSystemVersion</key><string>$MACOSX_DEPLOYMENT_TARGET</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHighResolutionCapable</key><true/>
