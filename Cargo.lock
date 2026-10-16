@@ -596,6 +596,7 @@ dependencies = [
  "freya-winit",
  "futures-util",
  "gethostname",
+ "image",
  "jni 0.21.1",
  "libc",
  "log",

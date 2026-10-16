@@ -276,13 +276,18 @@ pub fn app() -> impl IntoElement {
         }
     });
     use_hook(move || crate::settings::apply_interface(station.peek().interface));
-    // The tray's menu shows the song playing and whether it plays.
+    // The tray's menu shows the song playing, whether it plays, and the shuffle and repeat modes.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let now = use_radio::<AppState, Channel>(Channel::Now);
         use_side_effect(move || {
             let state = now.read();
-            crate::tray::follow(state.now.song.as_ref(), state.now.playing);
+            crate::tray::follow(
+                state.now.song.as_ref(),
+                state.now.playing,
+                state.now.shuffle,
+                state.now.repeat,
+            );
         });
     }
     let auth = use_radio::<AppState, Channel>(Channel::Auth);
@@ -779,6 +784,15 @@ pub fn menu_facts(id: &str) -> (bool, Vec<Collection>) {
         });
         (state.liked(id), playlists)
     })
+}
+
+/// Performs `action` as a key or a tap would, as the tray's menu does.
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+pub fn act(action: Action) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    perform(station, &engine, action);
 }
 
 /// Sends `command` to the player that plays, as the tray's buttons do.
