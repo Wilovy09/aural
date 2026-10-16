@@ -97,7 +97,7 @@ impl Component for QueuePanel {
 fn play_at(at: usize) -> impl FnMut(Event<PressEventData>) + 'static {
     move |event: Event<PressEventData>| {
         event.stop_propagation();
-        if !ui::swipe::just_swiped() {
+        if !ui::swipe::just_swiped() && !ui::long_press::taken() {
             crate::app::play_at(at);
         }
     }
@@ -245,7 +245,7 @@ impl Component for Movable {
 
 /// One song of the queue.
 fn row(key: usize, song: &Song, current: bool) -> impl IntoElement {
-    rect()
+    ui::long_press::hold(rect(), song.clone())
         .key(key)
         .on_secondary_down({
             let song = song.clone();
