@@ -596,6 +596,7 @@ dependencies = [
  "freya-winit",
  "futures-util",
  "gethostname",
+ "image",
  "jni 0.21.1",
  "libc",
  "log",
@@ -724,7 +725,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex 2.0.1",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logos/aural_banner.svg" alt="Aural" width="640">
+  <img src="assets/logos/aural_banner_animado_large.gif" alt="Aural" width="1852">
 </p>
 
 <p align="center">

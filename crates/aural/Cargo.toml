@@ -96,6 +96,8 @@ webview.workspace = true
 discord-rich-presence = "1.1"
 # The icon in the menu bar or the system tray.
 freya = { workspace = true, features = ["tray"] }
+# Decodes the cover shown beside the song in the tray's menu.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

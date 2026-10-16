@@ -4,6 +4,7 @@
 
 mod cover;
 pub mod form_input;
+pub mod long_press;
 pub mod spectrum;
 pub mod swipe;
 pub mod tint;
@@ -283,8 +284,8 @@ pub fn ring(focused: bool) -> bool {
 pub fn tap(target: crate::nav::Target) -> impl FnMut(Event<PressEventData>) + 'static {
     move |event: Event<PressEventData>| {
         event.stop_propagation();
-        // The release that ends a swipe is not a tap on the row.
-        if swipe::just_swiped() {
+        // The release that ends a swipe, or a hold that opened a menu, is not a tap on the row.
+        if swipe::just_swiped() || long_press::taken() {
             return;
         }
         crate::app::tap(target);

@@ -19,6 +19,8 @@ pub struct Settings {
     pub discord: bool,
     /// How loud the music plays, apart from the device's volume (desktop only).
     pub volume: crate::engine::Volume,
+    /// Play on with similar songs once the queue runs out (opt-in).
+    pub autoplay: bool,
 }
 
 impl Default for Settings {
@@ -30,6 +32,7 @@ impl Default for Settings {
             translate: false,
             discord: true,
             volume: crate::engine::Volume::default(),
+            autoplay: false,
         }
     }
 }

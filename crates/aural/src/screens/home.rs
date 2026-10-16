@@ -380,9 +380,11 @@ fn quick_tile(
         })
         .on_press(ui::tap(Target::Content(Spot::Cell(shelf, at))))
         .map(song_of(pick), |tile, song| {
-            tile.on_secondary_down(move |event: Event<PressEventData>| {
-                crate::menu::open(song.clone(), crate::menu::location(&event))
-            })
+            ui::long_press::hold(tile, song.clone()).on_secondary_down(
+                move |event: Event<PressEventData>| {
+                    crate::menu::open(song.clone(), crate::menu::location(&event))
+                },
+            )
         })
         .child(cover(pick, side, 0.))
         .child(
@@ -445,9 +447,11 @@ fn tile(shelf: usize, at: usize, pick: &Pick, wide: bool, focused: bool) -> impl
         .spacing(8.)
         .on_press(ui::tap(Target::Content(Spot::Cell(shelf, at))))
         .map(song_of(pick), |tile, song| {
-            tile.on_secondary_down(move |event: Event<PressEventData>| {
-                crate::menu::open(song.clone(), crate::menu::location(&event))
-            })
+            ui::long_press::hold(tile, song.clone()).on_secondary_down(
+                move |event: Event<PressEventData>| {
+                    crate::menu::open(song.clone(), crate::menu::location(&event))
+                },
+            )
         })
         .child(
             rect()

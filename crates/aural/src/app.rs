@@ -263,6 +263,7 @@ pub fn app() -> impl IntoElement {
         lyrics::set_language("es");
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         crate::discord::enable(settings.discord);
+        crate::engine::autoplay(settings.autoplay);
         AppState {
             motion: settings.motion,
             text: settings.text,
@@ -270,17 +271,23 @@ pub fn app() -> impl IntoElement {
             translate: settings.translate,
             discord: settings.discord,
             volume: settings.volume,
+            autoplay: settings.autoplay,
             ..AppState::default()
         }
     });
     use_hook(move || crate::settings::apply_interface(station.peek().interface));
-    // The tray's menu shows the song playing and whether it plays.
+    // The tray's menu shows the song playing, whether it plays, and the shuffle and repeat modes.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let now = use_radio::<AppState, Channel>(Channel::Now);
         use_side_effect(move || {
             let state = now.read();
-            crate::tray::follow(state.now.song.as_ref(), state.now.playing);
+            crate::tray::follow(
+                state.now.song.as_ref(),
+                state.now.playing,
+                state.now.shuffle,
+                state.now.repeat,
+            );
         });
     }
     let auth = use_radio::<AppState, Channel>(Channel::Auth);
@@ -647,6 +654,13 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             state.motion = !state.motion;
             save_settings(&state);
         }
+        Action::ToggleAutoplay => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Navigation);
+            state.autoplay = !state.autoplay;
+            crate::engine::autoplay(state.autoplay);
+            save_settings(&state);
+        }
         Action::ToggleDiscord => {
             let mut station = station;
             let mut state = station.write_channel(Channel::Navigation);
@@ -770,6 +784,15 @@ pub fn menu_facts(id: &str) -> (bool, Vec<Collection>) {
         });
         (state.liked(id), playlists)
     })
+}
+
+/// Performs `action` as a key or a tap would, as the tray's menu does.
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+pub fn act(action: Action) {
+    let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
+        return;
+    };
+    perform(station, &engine, action);
 }
 
 /// Sends `command` to the player that plays, as the tray's buttons do.
@@ -926,6 +949,7 @@ fn save_settings(state: &AppState) {
         translate: state.translate,
         discord: state.discord,
         volume: state.volume,
+        autoplay: state.autoplay,
     });
 }
 

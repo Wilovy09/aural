@@ -439,7 +439,8 @@ impl Component for TrackRow {
                 )
         };
 
-        let row = rect()
+        // A finger held on the row opens its menu, as a right click does.
+        let row = ui::long_press::hold(rect(), song.clone())
             .on_secondary_down({
                 let song = song.clone();
                 move |event: Event<PressEventData>| {

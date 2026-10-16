@@ -1,0 +1,42 @@
+{
+  "fill": {
+    "solid": "srgb:0.04314,0.03922,0.07843,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "symbol-white.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "symbol-gradient.svg"
+            }
+          ],
+          "name": "symbol"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "background.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "background-dark.svg"
+            }
+          ],
+          "name": "background"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

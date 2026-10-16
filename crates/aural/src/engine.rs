@@ -26,6 +26,14 @@ const RESTART_AFTER: Duration = Duration::from_secs(3);
 const PATIENCE: Duration = Duration::from_secs(15);
 /// How long before the end of a song the next one starts loading.
 const PRELOAD_BEFORE: Duration = Duration::from_secs(25);
+
+/// Whether the queue goes on with songs like its last one once it runs out (opt-in).
+static AUTOPLAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turns endless playback on or off, as the setting says.
+pub fn autoplay(on: bool) {
+    AUTOPLAY.store(on, std::sync::atomic::Ordering::Relaxed);
+}
 /// The loudness YouTube's `loudnessDb` is measured against; 0 dB there is this many LUFS.
 const REFERENCE_LUFS: f32 = -14.0;
 /// The loudness every song is brought to.
@@ -303,6 +311,10 @@ fn run(
     // How many songs added with `Enqueue` wait right after the song playing.
     let mut added = 0usize;
     let mut volume = Volume::default();
+    // Songs like the last one, being fetched to play on with, and the song they were asked
+    // for, so a queue is only extended once from each last song.
+    let mut extending: Option<oneshot::Receiver<Result<Vec<Song>>>> = None;
+    let mut extended_from: Option<String> = None;
 
     loop {
         #[cfg(target_os = "ios")]
@@ -525,6 +537,49 @@ fn run(
             say(Update::Position(elapsed, playing.duration));
         }
 
+        // On the last song with endless playback on, fetch songs like it to play on with.
+        if AUTOPLAY.load(std::sync::atomic::Ordering::Relaxed)
+            && repeat == Repeat::Off
+            && index + 1 >= queue.len()
+            && extending.is_none()
+            && let Some(seed) = queue.get(index).cloned()
+            && extended_from.as_deref() != Some(seed.id.as_str())
+        {
+            extended_from = Some(seed.id.clone());
+            let (done, ready) = oneshot::channel();
+            let api = api.clone();
+            runtime::spawn(async move {
+                let _ = done.send(similar(api, seed).await);
+            });
+            extending = Some(ready);
+        }
+        if let Some(ready) = extending.as_mut() {
+            match ready.try_recv() {
+                Ok(Ok(songs)) => {
+                    let fresh: Vec<Song> = songs
+                        .into_iter()
+                        .filter(|song| queue.iter().all(|it| it.id != song.id))
+                        .collect();
+                    if !fresh.is_empty() {
+                        log::info!("engine: playing on with {} similar songs", fresh.len());
+                        queue.extend(fresh.iter().cloned());
+                        match shuffled {
+                            true => original.extend(fresh),
+                            false => original = queue.clone(),
+                        }
+                        say(Update::Queue(queue.clone(), index));
+                    }
+                    extending = None;
+                }
+                Ok(Err(error)) => {
+                    log::warn!("engine: cannot find similar songs: {error:#}");
+                    extending = None;
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {}
+                Err(oneshot::error::TryRecvError::Closed) => extending = None,
+            }
+        }
+
         // Near the end, fetch the next song; once it is in, queue it right behind.
         let near_end = playing
             .duration
@@ -566,6 +621,16 @@ fn run(
             }
         }
     }
+}
+
+/// Songs like `seed` to play on with: YouTube Music's radio of it, without `seed` itself.
+async fn similar(api: Arc<YtMusic>, seed: Song) -> Result<Vec<Song>> {
+    let tracks = api.track_radio(&seed.id).await?;
+    Ok(tracks
+        .into_iter()
+        .filter_map(crate::library::song)
+        .filter(|song| song.id != seed.id)
+        .collect())
 }
 
 /// The song after `index` in a queue of `length`: the same one again on repeat-one (unless

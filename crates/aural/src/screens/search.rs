@@ -512,7 +512,7 @@ impl View<'_> {
             (true, None) => format!("Canción • {}", song.artist),
             (false, _) => song.artist.clone(),
         };
-        let line = rect()
+        let line = ui::long_press::hold(rect(), song.clone())
             .on_secondary_down({
                 let song = song.clone();
                 move |event: Event<PressEventData>| {
