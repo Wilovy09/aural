@@ -5,7 +5,9 @@
 
 use std::time::{Duration, Instant};
 
-use freya::animation::{AnimNum, OnCreation, OnFinish, use_animation};
+use freya::animation::{
+    AnimNum, Ease, Function, OnCreation, OnFinish, use_animation, use_animation_transition,
+};
 use freya::prelude::*;
 use freya::radio::use_radio;
 use lyrics::{Lyrics, LyricsLine, LyricsWord};
@@ -17,6 +19,9 @@ use crate::ui::{self, Icon, color, text};
 const SIZE_MAX: f32 = 30.;
 /// Where the sung line sits, as a share of the panel's height from the top.
 const PIN: f32 = 0.25;
+/// How far in from the top and the bottom the sheet fades, as shares of the window's height.
+const FADE_TOP: f32 = 0.16;
+const FADE_BOTTOM: f32 = 0.3;
 /// The gap between two lines, as a share of the text size (Sonora's 16 px at its 27).
 const GAP: f32 = 0.6;
 /// How bright lines already sung and lines still to come are, Sonora's 0.4 and 0.6 of its
@@ -105,6 +110,16 @@ impl Component for LyricsPanel {
             None => 0.,
         };
         let scroll = ui::use_follow_always(target);
+        // The sheet melts into the backdrop at the top and the bottom, so the eye stays on the
+        // lines around the one sung; the pointer over it clears the fade to read it all.
+        let mut hovered = use_state(|| false);
+        let faded = use_animation_transition(use_reactive(&*hovered.read()), |_, hovered: bool| {
+            AnimNum::new(if hovered { 1. } else { 0. }, if hovered { 0. } else { 1. })
+                .time(260)
+                .function(Function::Sine)
+                .ease(Ease::InOut)
+        });
+        let faded = faded.get().value().clamp(0., 1.);
 
         let body = match (&state.lyrics, lines) {
             (_, Some(lines)) => synced(
@@ -137,27 +152,40 @@ impl Component for LyricsPanel {
             _ => note("Buscando la letra…").into_element(),
         };
 
-        ScrollView::new_controlled(scroll)
-            .show_scrollbar(false)
+        rect()
             .width(Size::fill())
             .height(Size::fill())
+            .on_pointer_enter(move |_| hovered.set(true))
+            .on_pointer_leave(move |_| hovered.set(false))
+            .fade(
+                (faded > 0.)
+                    .then(|| Fade::vertical(view * FADE_TOP * faded, view * FADE_BOTTOM * faded)),
+            )
             .child(
-                rect()
+                ScrollView::new_controlled(scroll)
+                    .show_scrollbar(false)
                     .width(Size::fill())
-                    .padding((view * PIN, 24., view * 0.7, 0.))
-                    .child(body)
-                    .map(credits(&state, translation.as_ref()), |page, credits| {
-                        page.child(rect().margin((size * 2., 0., 0., 0.)).spacing(4.).children(
-                            credits.into_iter().map(|line| {
-                                label()
-                                    .text(line)
-                                    .font_size(text::BODY)
-                                    .color(dim(AHEAD))
-                                    .width(Size::fill())
-                                    .into_element()
+                    .height(Size::fill())
+                    .child(
+                        rect()
+                            .width(Size::fill())
+                            .padding((view * PIN, 24., view * 0.7, 0.))
+                            .child(body)
+                            .map(credits(&state, translation.as_ref()), |page, credits| {
+                                page.child(
+                                    rect().margin((size * 2., 0., 0., 0.)).spacing(4.).children(
+                                        credits.into_iter().map(|line| {
+                                            label()
+                                                .text(line)
+                                                .font_size(text::BODY)
+                                                .color(dim(AHEAD))
+                                                .width(Size::fill())
+                                                .into_element()
+                                        }),
+                                    ),
+                                )
                             }),
-                        ))
-                    }),
+                    ),
             )
     }
 }
