@@ -157,8 +157,10 @@ impl Component for LyricsPanel {
             .height(Size::fill())
             .on_pointer_enter(move |_| hovered.set(true))
             .on_pointer_leave(move |_| hovered.set(false))
+            // Not on a TV: each line in the faded edges takes a layer of its own as the sheet
+            // scrolls, more than its GPU keeps up with, and it has no pointer to clear it.
             .fade(
-                (faded > 0.)
+                (faded > 0. && crate::platform::tv_zoom().is_none())
                     .then(|| Fade::vertical(view * FADE_TOP * faded, view * FADE_BOTTOM * faded)),
             )
             .child(

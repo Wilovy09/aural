@@ -21,6 +21,8 @@ pub struct Settings {
     pub volume: crate::engine::Volume,
     /// Play on with similar songs once the queue runs out (opt-in).
     pub autoplay: bool,
+    /// Keep the fullscreen player's backdrop moving (opt-in: it costs a TV every frame).
+    pub backdrop: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +35,7 @@ impl Default for Settings {
             discord: true,
             volume: crate::engine::Volume::default(),
             autoplay: false,
+            backdrop: false,
         }
     }
 }
@@ -84,7 +87,8 @@ impl Scale {
 pub fn apply_interface(scale: Scale) {
     freya::prelude::Platform::get()
         .current_window()
-        .set_custom_scale_factor(scale.zoom() as f64);
+        // On a TV the interface size is applied over the zoom that lays it out like a laptop's.
+        .set_custom_scale_factor(scale.zoom() as f64 * platform::tv_zoom().unwrap_or(1.));
 }
 
 /// The saved settings, or the defaults.

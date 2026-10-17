@@ -49,6 +49,70 @@ pub fn keep_awake(awake: bool) {
     let _ = awake;
 }
 
+/// How wide, in logical pixels, a TV's interface is laid out: a TV reports a phone's density
+/// (2× on a 1080p screen), which leaves a desktop layout under 1000 pixels to work with.
+const TV_WIDTH: f64 = 1280.;
+
+/// The zoom that lays a TV's interface out [`TV_WIDTH`] wide, or `None` off a TV. Asked once.
+pub fn tv_zoom() -> Option<f64> {
+    #[cfg(target_os = "android")]
+    {
+        static ZOOM: std::sync::OnceLock<Option<f64>> = std::sync::OnceLock::new();
+        *ZOOM.get_or_init(|| match android_tv_zoom() {
+            Ok(zoom) => zoom,
+            Err(error) => {
+                log::warn!("platform: cannot tell whether this is a TV: {error:#}");
+                None
+            }
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    None
+}
+
+/// Whether Android says this is a TV (`UI_MODE_TYPE_TELEVISION`), and if so the zoom off its
+/// screen's width and density.
+#[cfg(target_os = "android")]
+fn android_tv_zoom() -> anyhow::Result<Option<f64>> {
+    use jni::objects::JValue;
+    crate::login::with_java(|env, activity| {
+        let name = env.new_string("uimode")?;
+        let manager = env
+            .call_method(
+                activity,
+                "getSystemService",
+                "(Ljava/lang/String;)Ljava/lang/Object;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?;
+        let mode = env
+            .call_method(&manager, "getCurrentModeType", "()I", &[])?
+            .i()?;
+        // UiModeManager.UI_MODE_TYPE_TELEVISION
+        if mode != 4 {
+            return Ok(None);
+        }
+        let resources = env
+            .call_method(activity, "getResources", "()Landroid/content/res/Resources;", &[])?
+            .l()?;
+        let metrics = env
+            .call_method(
+                &resources,
+                "getDisplayMetrics",
+                "()Landroid/util/DisplayMetrics;",
+                &[],
+            )?
+            .l()?;
+        let width = env.get_field(&metrics, "widthPixels", "I")?.i()?;
+        let height = env.get_field(&metrics, "heightPixels", "I")?.i()?;
+        let density = env.get_field(&metrics, "density", "F")?.f()?;
+        let wide = width.max(height) as f64;
+        let zoom = wide / (TV_WIDTH * density.max(0.5) as f64);
+        log::info!("platform: a TV, {width}×{height} at {density}×, zoomed to {zoom:.2}");
+        Ok(Some(zoom))
+    })
+}
+
 /// Holds Wi-Fi's multicast lock, without which Android drops the mDNS announcements of the
 /// other devices.
 #[cfg(target_os = "android")]

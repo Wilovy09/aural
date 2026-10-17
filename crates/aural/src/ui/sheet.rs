@@ -84,6 +84,14 @@ impl Component for Sheet {
         let offset = *lowered.read();
         let glass = self.glass;
         let palette = Palette::new(glass);
+        // A TV's GPU cannot afford a moving blur, nor the layer per element that fading the
+        // panel in takes: there it only slides, and the blur comes on once it has arrived.
+        let light = crate::platform::tv_zoom().is_none();
+        let settled = shown >= 1.;
+        let blur = match light {
+            true => 48.,
+            false => 28.,
+        };
         let close = self.close;
 
         rect()
@@ -110,10 +118,18 @@ impl Component for Sheet {
                             .bottom(-offset - (1. - shown) * tall),
                         // A computer's panel comes in from the right as it grows to size.
                         false => Position::new_global()
-                            .left(width - panel_width + (1. - shown) * 120.)
+                            .left(
+                                width - panel_width
+                                    + (1. - shown)
+                                        * match light {
+                                            true => 120.,
+                                            // Without the fade it slides in from off-screen.
+                                            false => panel_width,
+                                        },
+                            )
                             .top(0.),
                     })
-                    .maybe(!compact, |panel| {
+                    .maybe(!compact && light, |panel| {
                         panel
                             .scale(0.92 + 0.08 * shown)
                             .transform_origin(TransformOrigin::right())
@@ -130,8 +146,12 @@ impl Component for Sheet {
                         false => (24., 0., 0., 24.),
                     })
                     .overflow(Overflow::Clip)
-                    .background(palette.panel)
-                    .maybe(glass, |panel| panel.backdrop_blur(48.))
+                    .background(match glass && !light && !settled {
+                        // Darker while it slides, where the blur is not on yet.
+                        true => Color::from_argb(0xd9, 0x10, 0x10, 0x10),
+                        false => palette.panel,
+                    })
+                    .maybe(glass && (light || settled), |panel| panel.backdrop_blur(blur))
                     .border(Border::new().fill(palette.edge).width(1.))
                     .on_press(|event: Event<PressEventData>| event.stop_propagation())
                     // On a phone, a drag from the sheet's top pulls it down; far enough, it
