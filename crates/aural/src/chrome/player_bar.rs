@@ -152,7 +152,7 @@ impl Component for VolumeControl {
         let mut held = use_state(|| false);
         let mut area = use_state(Area::default);
         let at = move |x: f64| {
-            let width = area.peek().width().max(1.);
+            let width = (area.peek().width() - 2. * VOLUME_PAD).max(1.);
             volume.at((x as f32 / width).clamp(0., 1.))
         };
         let shown = volume.shown();
@@ -162,9 +162,19 @@ impl Component for VolumeControl {
             _ => Icon::VolumeHigh,
         };
 
+        // The track lights up and shows its knob while the pointer is over it or holds it.
+        let mut hovered = use_state(|| false);
+        let lit = *hovered.read() || *held.read();
+        // The track runs inside the hit area's side padding.
+        let track = (area.read().width() - 2. * VOLUME_PAD).max(0.);
+        let knob = if lit { 12. } else { 0. };
+
         rect()
             .direction(Direction::Horizontal)
             .cross_align(Alignment::Center)
+            .spacing(2.)
+            .on_pointer_enter(move |_| hovered.set(true))
+            .on_pointer_leave(move |_| hovered.set(false))
             .on_wheel(move |event: Event<WheelEventData>| {
                 if event.delta_y == 0. {
                     return;
@@ -174,24 +184,39 @@ impl Component for VolumeControl {
                 crate::app::set_volume(volume.at(volume.shown() + step), true);
             })
             .child(
-                ui::button(Variant::Ghost, Some(glyph), None, false)
-                    .on_press(move |_| crate::app::set_volume(volume.toggled(), true)),
+                rect()
+                    .width(Size::px(metrics::CONTROL))
+                    .height(Size::px(metrics::CONTROL))
+                    .center()
+                    .corner_radius(metrics::CONTROL / 2.)
+                    .on_press(move |_| crate::app::set_volume(volume.toggled(), true))
+                    .child(ui::icon(
+                        glyph,
+                        18.,
+                        match lit {
+                            true => color::FOREGROUND,
+                            false => color::MUTED_FOREGROUND,
+                        },
+                    )),
             )
             .child(
                 // A tall, invisible hit area around the thin line, as on the progress bar.
                 rect()
-                    .width(Size::px(96.))
+                    .width(Size::px(108.))
                     .height(Size::px(24.))
                     .main_align(Alignment::Center)
                     .on_sized(move |event: Event<SizedEventData>| area.set(event.area))
                     .on_pointer_down(move |event: Event<PointerEventData>| {
                         event.stop_propagation();
                         held.set(true);
-                        crate::app::set_volume(at(event.element_location().x), false);
+                        let x = event.element_location().x - VOLUME_PAD as f64;
+                        crate::app::set_volume(at(x), false);
                     })
                     .on_global_pointer_move(move |event: Event<PointerEventData>| {
                         if *held.peek() {
-                            let x = event.global_location().x - area.peek().min_x() as f64;
+                            let x = event.global_location().x
+                                - area.peek().min_x() as f64
+                                - VOLUME_PAD as f64;
                             crate::app::set_volume(at(x), false);
                         }
                     })
@@ -201,27 +226,46 @@ impl Component for VolumeControl {
                             crate::app::set_volume(volume, true);
                         }
                     })
-                    .padding((0., 6.))
+                    .padding((0., VOLUME_PAD))
                     .child(
                         rect()
                             .width(Size::fill())
-                            .height(Size::px(match *held.read() {
-                                true => 6.,
-                                false => 4.,
-                            }))
-                            .corner_radius(3.)
-                            .background(color::MUTED)
+                            .height(Size::px(4.))
+                            .corner_radius(2.)
+                            .background(Color::from_argb(0x33, 0xff, 0xff, 0xff))
                             .child(
                                 rect()
-                                    .width(Size::percent(shown * 100.))
+                                    .width(Size::px(track * shown))
                                     .height(Size::fill())
-                                    .corner_radius(3.)
-                                    .background(color::PROGRESS),
-                            ),
+                                    .corner_radius(2.)
+                                    .background(match lit {
+                                        true => color::FOREGROUND,
+                                        false => Color::from_argb(0xb3, 0xff, 0xff, 0xff),
+                                    }),
+                            )
+                            // The knob, centred on where the fill ends.
+                            .maybe(lit, |line| {
+                                line.child(
+                                    rect()
+                                        .position(
+                                            Position::new_absolute()
+                                                .left(track * shown - knob / 2.)
+                                                .top(2. - knob / 2.),
+                                        )
+                                        .width(Size::px(knob))
+                                        .height(Size::px(knob))
+                                        .corner_radius(knob / 2.)
+                                        .background(color::FOREGROUND)
+                                        .shadow((0., 1., 4., 0., Color::from_argb(0x66, 0, 0, 0))),
+                                )
+                            }),
                     ),
             )
     }
 }
+
+/// The side padding of the volume's hit area, around its track.
+const VOLUME_PAD: f32 = 6.;
 
 /// The phone's player above the bottom bar, YouTube Music's: a thin progress line over the
 /// cover, title and artist, and play or pause. A tap anywhere else opens the fullscreen player.
