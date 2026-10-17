@@ -50,6 +50,7 @@ impl Component for PlayerBar {
                     rect()
                         .width(Size::flex(1.))
                         .direction(Direction::Horizontal)
+                        .content(Content::Flex)
                         .cross_align(Alignment::Center)
                         .spacing(10.)
                         .maybe(song.is_some(), |left| {
@@ -64,7 +65,12 @@ impl Component for PlayerBar {
                                     .child(ui::heart(liked, 18., light, color::MUTED_FOREGROUND)),
                             )
                         })
-                        .child(rect().on_press(press(4)).child(now_playing(song))),
+                        .child(
+                            rect()
+                                .width(Size::flex(1.))
+                                .on_press(press(4))
+                                .child(now_playing(song)),
+                        ),
                 )
                 .child(
                     rect()
@@ -114,11 +120,12 @@ impl Component for PlayerBar {
                             cfg!(not(any(target_os = "android", target_os = "ios"))),
                             |right| right.child(VolumeControl),
                         )
-                        .child(Casting)
-                        .child(
-                            ui::button(Variant::Ghost, Some(Icon::Cast), None, ring(3))
-                                .on_press(press(3)),
-                        )
+                        .child(DevicesPill {
+                            focused: ring(3),
+                            target: Target::Player(3),
+                            named: true,
+                            glass: false,
+                        })
                         .child(
                             ui::button(Variant::Ghost, Some(Icon::Maximize), None, ring(4))
                                 .on_press(press(4)),
@@ -264,23 +271,16 @@ impl Component for MiniPlayer {
                             .width(Size::flex(1.))
                             .spacing(2.)
                             .child(
-                                ui::line(song.title, text::BODY, color::FOREGROUND)
-                                    .font_weight(FontWeight::SEMI_BOLD)
-                                    .width(Size::fill()),
+                                ui::marquee::Marquee::new(
+                                    song.title,
+                                    text::BODY,
+                                    color::FOREGROUND,
+                                )
+                                .weight(FontWeight::SEMI_BOLD),
                             )
                             .child(
-                                ui::line(
-                                    match remote {
-                                        Some(name) => format!("Reproduciendo en {name}"),
-                                        None => song.artist,
-                                    },
-                                    text::SMALL,
-                                    match remote_on {
-                                        true => color::FOCUS_ON_PRIMARY,
-                                        false => color::MUTED_FOREGROUND,
-                                    },
-                                )
-                                .width(Size::fill()),
+                                ui::line(song.artist, text::SMALL, color::MUTED_FOREGROUND)
+                                    .width(Size::fill()),
                             ),
                     )
                     .child(
@@ -293,16 +293,13 @@ impl Component for MiniPlayer {
                             .on_press(ui::tap(Target::Player(PLAYER_LIKE)))
                             .child(ui::heart(liked, 22., light, color::MUTED_FOREGROUND)),
                     )
-                    .child(
-                        rect()
-                            .width(Size::px(44.))
-                            .height(Size::px(48.))
-                            .center()
-                            .corner_radius(22.)
-                            .border(ui::focus_border(ring(3)))
-                            .on_press(ui::tap(Target::Player(3)))
-                            .child(ui::icon(Icon::Cast, 20., color::MUTED_FOREGROUND)),
-                    )
+                    // Only the icon while this phone plays: the title keeps the room.
+                    .child(DevicesPill {
+                        focused: ring(3),
+                        target: Target::Player(3),
+                        named: remote_on,
+                        glass: false,
+                    })
                     .child(
                         rect()
                             .width(Size::px(48.))
@@ -325,26 +322,66 @@ impl Component for MiniPlayer {
     }
 }
 
-/// "Reproduciendo en …" beside the player bar's buttons, while another device plays.
+/// The device the music plays on: this one, or the one it controls. Pressed, the devices
+/// panel. On glass over the fullscreen player; plain and smaller in the player bars.
 #[derive(PartialEq)]
-struct Casting;
+pub struct DevicesPill {
+    pub focused: bool,
+    pub target: Target,
+    /// Whether it shows the device's name beside the icon.
+    pub named: bool,
+    /// The fullscreen player's glass and size, rather than the bar's.
+    pub glass: bool,
+}
 
-impl Component for Casting {
+impl Component for DevicesPill {
     fn render(&self) -> impl IntoElement {
         let connect = use_radio::<AppState, Channel>(Channel::Connect);
-        let remote = connect.read().connect.remote().map(str::to_owned);
+        let name = match connect.read().connect.remote() {
+            Some(name) => name.to_owned(),
+            None if cfg!(target_os = "macos") => "Esta Mac".to_owned(),
+            None if cfg!(target_os = "ios") => "Este iPhone".to_owned(),
+            None if cfg!(target_os = "android") && ui::compact() => "Este teléfono".to_owned(),
+            None if cfg!(target_os = "android") => "Esta TV".to_owned(),
+            None => "Este equipo".to_owned(),
+        };
+        let glass = self.glass;
+        let (side, glyph, size, ink) = match glass {
+            true => (metrics::CONTROL + 12., 18., text::BODY, color::FOREGROUND),
+            false => (metrics::CONTROL, 16., text::SMALL, color::MUTED_FOREGROUND),
+        };
         rect()
+            .height(Size::px(side))
+            .min_width(Size::px(side))
+            .max_width(Size::px(220.))
+            .padding(match (self.named, glass) {
+                (false, _) => (0., 0., 0., 0.),
+                (true, true) => (0., 18., 0., 14.),
+                (true, false) => (0., 10., 0., 8.),
+            })
+            .direction(Direction::Horizontal)
             .main_align(Alignment::Center)
-            .height(Size::px(metrics::CONTROL))
-            .map(remote, |casting, name| {
-                casting.child(
-                    ui::line(
-                        format!("Reproduciendo en {name}"),
-                        text::SMALL,
-                        color::FOCUS_ON_PRIMARY,
-                    )
-                    .font_weight(FontWeight::SEMI_BOLD),
-                )
+            .cross_align(Alignment::Center)
+            .spacing(if glass { 10. } else { 6. })
+            .corner_radius(metrics::PLAYER_RADIUS + 4.)
+            .maybe(glass, |pill| {
+                pill.background(color::GLASS).shadow((
+                    0.,
+                    8.,
+                    24.,
+                    0.,
+                    Color::from_argb(0x33, 0, 0, 0),
+                ))
+            })
+            .border(match (self.focused, glass) {
+                (true, _) => ui::focus_border(true),
+                (false, true) => Border::new().fill(color::GLASS_EDGE).width(1.),
+                (false, false) => ui::focus_border(false),
+            })
+            .on_press(ui::tap(self.target))
+            .child(ui::icon(Icon::Cast, glyph, ink))
+            .maybe(self.named, |pill| {
+                pill.child(ui::line(name, size, ink).font_weight(FontWeight::SEMI_BOLD))
             })
     }
 }
@@ -391,18 +428,23 @@ fn now_playing(song: Option<Song>) -> impl IntoElement {
             .into_element();
     };
     rect()
+        .width(Size::fill())
         .direction(Direction::Horizontal)
+        .content(Content::Flex)
         .cross_align(Alignment::Center)
         .spacing(12.)
         .child(Cover::new(song.cover.clone(), 42., 4.).apple(crate::artwork::Wanted::song(&song)))
         .child(
             rect()
+                .width(Size::flex(1.))
                 .spacing(2.)
                 .child(
-                    ui::line(song.title, text::BODY, color::FOREGROUND)
-                        .font_weight(FontWeight::SEMI_BOLD),
+                    ui::marquee::Marquee::new(song.title, text::BODY, color::FOREGROUND)
+                        .weight(FontWeight::SEMI_BOLD),
                 )
-                .child(ui::line(song.artist, text::SMALL, color::MUTED_FOREGROUND)),
+                .child(
+                    ui::line(song.artist, text::SMALL, color::MUTED_FOREGROUND).width(Size::fill()),
+                ),
         )
         .into_element()
 }

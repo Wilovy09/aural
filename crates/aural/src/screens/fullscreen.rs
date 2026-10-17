@@ -13,7 +13,6 @@ use crate::library::{self, Song};
 use crate::nav::Target;
 use crate::screens::backdrop::Backdrop;
 use crate::screens::lyrics::LyricsPanel;
-use crate::screens::queue::QueuePanel;
 use crate::state::{AppState, Channel, Mode, View};
 use crate::ui::{self, Cover, Icon, Variant, color, metrics, text};
 
@@ -26,9 +25,9 @@ impl Component for Fullscreen {
         let now = use_radio::<AppState, Channel>(Channel::Now);
         let motion_on = navigation.read().motion;
         let library = use_radio::<AppState, Channel>(Channel::Library);
-        let (song, playback) = {
+        let (song, playback, next) = {
             let now = &now.read().now;
-            (now.song.clone(), Playback::from(now))
+            (now.song.clone(), Playback::from(now), up_next(now))
         };
         let liked = song
             .as_ref()
@@ -57,6 +56,7 @@ impl Component for Fullscreen {
         let view = navigation_state.view;
         let mode = navigation_state.mode;
         let translating = navigation_state.translate;
+        let queue_open = navigation_state.queue;
         let controls = mode == Mode::Normal;
         let focus = navigation_state.focus;
         drop(navigation_state);
@@ -82,10 +82,11 @@ impl Component for Fullscreen {
                 (Icon::Lyrics, "Letra"),
                 (Icon::Queue, "Cola"),
             ],
-            match view {
-                View::Music => 0,
-                View::Lyrics => 1,
-                View::Queue => 2,
+            // Cola stays lit while its panel is open.
+            match (queue_open, view) {
+                (true, _) => 2,
+                (false, View::Music) => 0,
+                (false, View::Lyrics) => 1,
             },
             tab_ring,
         );
@@ -175,6 +176,7 @@ impl Component for Fullscreen {
                 button: matches!(focus.full_row, 1 | 3).then_some(focus.full_button),
                 translating,
                 liked,
+                next: next.clone(),
             })
             .into_element();
         }
@@ -197,8 +199,9 @@ impl Component for Fullscreen {
             .map(song, |screen, song| {
                 screen
                     .child(
-                        ui::line(song.title, text::TITLE, color::FOREGROUND)
-                            .font_weight(FontWeight::SEMI_BOLD),
+                        ui::marquee::Marquee::new(song.title, text::TITLE, color::FOREGROUND)
+                            .weight(FontWeight::SEMI_BOLD)
+                            .centered(),
                     )
                     .child(ui::line(song.artist, text::BODY, color::ON_BACKDROP))
             })
@@ -236,6 +239,7 @@ impl Component for Fullscreen {
                 .into_element();
         }
 
+        let shows_next = controls && next.is_some();
         // The backdrop sits under everything, the player and panel float over it.
         rect()
             .expanded()
@@ -250,22 +254,148 @@ impl Component for Fullscreen {
             .child(
                 rect()
                     .expanded()
-                    .padding((32., 48., 24., 32.))
-                    .direction(Direction::Horizontal)
+                    .padding((20., 48., 24., 32.))
                     .content(Content::Flex)
-                    .spacing(32.)
-                    .child(player)
-                    .maybe(split, |screen| {
-                        screen.child(rect().width(Size::flex(1.)).height(Size::fill()).child(
-                            match view {
-                                View::Queue => QueuePanel.into_element(),
-                                _ => LyricsPanel.into_element(),
-                            },
-                        ))
-                    }),
+                    .spacing(4.)
+                    // Which device plays, in the top-right corner; pressed, the devices panel.
+                    .maybe(controls, |screen| {
+                        screen.child(
+                            rect()
+                                .width(Size::fill())
+                                .main_align(Alignment::End)
+                                .direction(Direction::Horizontal)
+                                .child(crate::chrome::player_bar::DevicesPill {
+                                    focused: focus.full_row == 4,
+                                    target: Target::Devices,
+                                    named: true,
+                                    glass: true,
+                                }),
+                        )
+                    })
+                    .child(
+                        rect()
+                            .width(Size::fill())
+                            .height(Size::flex(1.))
+                            .direction(Direction::Horizontal)
+                            .content(Content::Flex)
+                            .spacing(32.)
+                            // In the music view the card goes under the player, in the bottom-right
+                            // corner; floating over the backdrop, it flickered as that repainted.
+                            .child(match next.clone().filter(|_| shows_next && !split) {
+                                Some(next) => rect()
+                                    .width(Size::fill())
+                                    .height(Size::fill())
+                                    .content(Content::Flex)
+                                    .cross_align(Alignment::End)
+                                    .child(
+                                        rect()
+                                            .width(Size::fill())
+                                            .height(Size::flex(1.))
+                                            .child(player),
+                                    )
+                                    .child(next_card(&next, 340.))
+                                    .into_element(),
+                                None => player.into_element(),
+                            })
+                            .maybe(split, |screen| {
+                                screen.child(
+                                    rect()
+                                        .width(Size::flex(1.))
+                                        .height(Size::fill())
+                                        .content(Content::Flex)
+                                        .cross_align(Alignment::End)
+                                        .spacing(16.)
+                                        .child(
+                                            rect()
+                                                .width(Size::fill())
+                                                .height(Size::flex(1.))
+                                                .child(LyricsPanel),
+                                        )
+                                        // Under the lyrics, not floating over them: a card over the
+                                        // scrolling lines flickers as they repaint.
+                                        .map(
+                                            next.clone().filter(|_| shows_next),
+                                            |column, next| column.child(next_card(&next, 340.)),
+                                        ),
+                                )
+                            }),
+                    ),
             )
             .into_element()
     }
+}
+
+/// The song after the one playing: the next in the queue, or the first again when repeat
+/// starts the queue over. Nothing on repeat-one, which plays the same song again.
+fn up_next(now: &crate::state::Now) -> Option<Song> {
+    match now.repeat {
+        Repeat::One => None,
+        Repeat::All => now
+            .queue
+            .get(now.index + 1)
+            .or_else(|| now.queue.first().filter(|_| now.queue.len() > 1))
+            .cloned(),
+        Repeat::Off => now.queue.get(now.index + 1).cloned(),
+    }
+}
+
+/// "Después": the next song's cover, title and artist on glass. Pressed, it plays.
+fn next_card(song: &Song, width: f32) -> NextCard {
+    NextCard {
+        song: song.clone(),
+        width,
+    }
+}
+
+/// Its own component so the player's re-renders pass it by: rebuilt with them, the card
+/// (and its cover) repainted and flickered.
+#[derive(PartialEq)]
+struct NextCard {
+    song: Song,
+    width: f32,
+}
+
+impl Component for NextCard {
+    fn render(&self) -> impl IntoElement {
+        card(&self.song, self.width)
+    }
+}
+
+fn card(song: &Song, width: f32) -> impl IntoElement {
+    rect()
+        .width(Size::px(width))
+        .height(Size::px(64.))
+        .padding((0., 14., 0., 10.))
+        .direction(Direction::Horizontal)
+        .content(Content::Flex)
+        .cross_align(Alignment::Center)
+        .spacing(12.)
+        // The same glass as the view tabs.
+        .corner_radius(metrics::PLAYER_RADIUS + 4.)
+        .background(color::GLASS)
+        .border(Border::new().fill(color::GLASS_EDGE).width(1.))
+        .shadow((0., 8., 24., 0., Color::from_argb(0x33, 0, 0, 0)))
+        .on_press(|event: Event<PressEventData>| {
+            event.stop_propagation();
+            crate::app::control(crate::engine::Command::Next);
+        })
+        .child(Cover::new(song.cover.clone(), 44., 8.).apple(crate::artwork::Wanted::song(song)))
+        .child(
+            rect()
+                .width(Size::flex(1.))
+                .spacing(2.)
+                .child(ui::eyebrow("Después").color(color::ON_BACKDROP))
+                .child(
+                    ui::line(
+                        format!("{} · {}", song.title, song.artist),
+                        text::BODY,
+                        color::FOREGROUND,
+                    )
+                    .font_weight(FontWeight::SEMI_BOLD)
+                    .width(Size::fill()),
+                ),
+        )
+        .child(ui::icon(Icon::Next, 16., color::ON_BACKDROP))
 }
 
 /// The transport's state, read from [`crate::state::Now`] without cloning its queue.
@@ -335,6 +465,8 @@ struct Phone {
     translating: bool,
     /// Whether the account likes the song.
     liked: bool,
+    /// What plays next.
+    next: Option<Song>,
 }
 
 /// The fullscreen player on a phone, after YouTube Music's and Apple Music's: close on the
@@ -353,6 +485,7 @@ fn phone(parts: Phone) -> impl IntoElement {
         button,
         translating,
         liked,
+        next,
     } = parts;
     let (top, bottom) = ui::safe();
     let (title, artist) = song
@@ -372,9 +505,8 @@ fn phone(parts: Phone) -> impl IntoElement {
                     .width(Size::flex(1.))
                     .spacing(4.)
                     .child(
-                        ui::line(title.clone(), size, color::FOREGROUND)
-                            .font_weight(FontWeight::BOLD)
-                            .width(Size::fill()),
+                        ui::marquee::Marquee::new(title.clone(), size, color::FOREGROUND)
+                            .weight(FontWeight::BOLD),
                     )
                     .child(
                         ui::line(artist.clone(), text::BODY + 1., color::ON_BACKDROP)
@@ -503,10 +635,7 @@ fn phone(parts: Phone) -> impl IntoElement {
                 rect()
                     .width(Size::fill())
                     .height(Size::flex(1.))
-                    .child(match view {
-                        View::Queue => QueuePanel.into_element(),
-                        _ => LyricsPanel.into_element(),
-                    }),
+                    .child(LyricsPanel),
             )
             .maybe(controls, |screen| screen.child(deck))
             .into_element(),
@@ -551,7 +680,12 @@ fn phone(parts: Phone) -> impl IntoElement {
                 })
                 .child(body)
                 .maybe(controls, |screen| {
-                    screen.child(rect().width(Size::fill()).center().child(tabs))
+                    screen
+                        // What plays next, over the tabs, in the music view.
+                        .map(next.filter(|_| view == View::Music), |screen, next| {
+                            screen.child(next_card(&next, ui::viewport().0 - 48.))
+                        })
+                        .child(rect().width(Size::fill()).center().child(tabs))
                 }),
         )
 }

@@ -364,7 +364,6 @@ pub fn app() -> impl IntoElement {
         Page::Playlists | Page::Albums => Cards.into_element(),
         Page::Account => Account.into_element(),
         Page::Search => crate::screens::search::Search.into_element(),
-        Page::Devices => crate::screens::devices::Devices.into_element(),
     };
     let shell = match ui::compact() {
         // A phone: the page over a mini player and the bottom bar.
@@ -435,6 +434,8 @@ pub fn app() -> impl IntoElement {
             },
         ))
         .child(crate::screens::pairing::PairingCode)
+        .child(crate::screens::queue::Queue)
+        .child(crate::screens::devices::Devices)
         .child(crate::menu::MenuLayer)
         .child(crate::screens::new_playlist::NewPlaylist)
         .child(crate::chrome::toast::Notice)
@@ -592,6 +593,7 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             connect(device);
         }
         Action::EditField => crate::screens::devices::edit(),
+        Action::EditCode => crate::screens::devices::edit_code(),
         Action::Go(_) => {}
         Action::Open(collection) => open(station, collection),
         Action::ToggleSave(album) => toggle_save(station, album),
@@ -806,6 +808,14 @@ pub fn measure_cache() {
     });
 }
 
+/// Closes the devices panel, as its close button or a press beside it does.
+pub fn close_devices() {
+    if let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) {
+        crate::screens::devices::leave();
+        station.write_channel(Channel::Navigation).devices = None;
+    }
+}
+
 /// Closes the cache's confirmation, as its Cancelar does.
 pub fn cancel_clearing() {
     if let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) {
@@ -844,8 +854,7 @@ pub fn act(action: Action) {
     perform(station, &engine, action);
 }
 
-/// Sends `command` to the player that plays, as the tray's buttons do.
-#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+/// Sends `command` to the player that plays, as the tray's buttons and the "Después" card do.
 pub fn control(command: Command) {
     let Some((station, engine)) = TAPS.with_borrow(Clone::clone) else {
         return;
@@ -975,11 +984,14 @@ pub fn open_queue() {
     if station.peek().now.song.is_none() {
         return;
     }
-    let mut state = station.write_channel(Channel::Navigation);
-    state.fullscreen = true;
-    state.view = crate::state::View::Queue;
-    state.focus.full_row = 1;
-    state.focus.full_button = 2;
+    station.write_channel(Channel::Navigation).queue = true;
+}
+
+/// Closes the queue's panel.
+pub fn close_queue() {
+    if let Some((mut station, _)) = TAPS.with_borrow(Clone::clone) {
+        station.write_channel(Channel::Navigation).queue = false;
+    }
 }
 
 /// Likes or unlikes `song`, from a tap on a row's heart.

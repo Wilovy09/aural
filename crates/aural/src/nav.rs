@@ -46,6 +46,8 @@ pub enum Action {
     Connect(Option<usize>),
     /// Give the devices page's field the keyboard.
     EditField,
+    /// Gives the keyboard to the devices panel's pairing code.
+    EditCode,
     /// The text size setting.
     SetText(crate::settings::Scale),
     /// The interface size setting.
@@ -107,6 +109,8 @@ pub enum Target {
     Back,
     /// The devices to play on.
     Devices,
+    /// A spot of the devices panel.
+    Device(Spot),
     /// The search page, with the keyboard in its field.
     Search,
 }
@@ -138,6 +142,10 @@ pub fn tap(state: &mut AppState, target: Target, columns: usize) -> Action {
             state.focus.full_button = at;
         }
         Target::Back => return press(state, Press::Back, columns),
+        Target::Device(spot) => {
+            state.devices = Some(spot);
+            return press(state, Press::Ok, columns);
+        }
         Target::Devices => {
             open_devices(state);
             return Action::None;
@@ -171,6 +179,17 @@ pub fn press(state: &mut AppState, press: Press, columns: usize) -> Action {
             Press::Up | Press::Down => {}
         }
         return Action::None;
+    }
+    // The queue's panel holds the keys while it is open: Back closes it.
+    if state.queue {
+        if press == Press::Back {
+            state.queue = false;
+        }
+        return Action::None;
+    }
+    // The devices panel holds the keys while it is open.
+    if let Some(spot) = state.devices {
+        return devices(state, spot, press);
     }
     // Sign out asks twice; any other key between the two presses cancels it.
     let confirming = std::mem::take(&mut state.confirm_sign_out);
@@ -237,14 +256,20 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
         (0, Press::Left) => focus.full_tab = focus.full_tab.saturating_sub(1),
         (0, Press::Right) => focus.full_tab = (focus.full_tab + 1).min(2),
         (0, Press::Down) => focus.full_row = 2,
-        (0, Press::Ok) => {
-            state.view = match focus.full_tab {
-                0 => View::Music,
-                1 => View::Lyrics,
-                _ => View::Queue,
-            }
+        // Cola opens the queue's panel over the player; the other two are views.
+        (0, Press::Ok) => match focus.full_tab {
+            0 => state.view = View::Music,
+            1 => state.view = View::Lyrics,
+            _ => state.queue = true,
+        },
+        // Over the tabs, the devices button in the top-right corner (row 4).
+        (0, Press::Up) => focus.full_row = 4,
+        (4, Press::Down) => focus.full_row = 0,
+        (4, Press::Ok) => {
+            open_devices(state);
+            return Action::None;
         }
-        (0, Press::Up) => {}
+        (4, _) => {}
         // The progress: left and right seek ten seconds.
         (2, Press::Left) => return Action::SeekBy(-SEEK_STEP),
         (2, Press::Right) => return Action::SeekBy(SEEK_STEP),
@@ -253,7 +278,6 @@ fn fullscreen(state: &mut AppState, press: Press) -> Action {
             focus.full_tab = match state.view {
                 View::Music => 0,
                 View::Lyrics => 1,
-                View::Queue => 2,
             };
         }
         (2, Press::Down) => focus.full_row = 1,
@@ -322,9 +346,6 @@ fn content(state: &mut AppState, press: Press, columns: usize) -> Action {
     }
     if matches!(state.page, Page::Artist(_)) {
         return artist(state, press);
-    }
-    if state.page == Page::Devices {
-        return devices(state, press);
     }
     if state.page == Page::Home {
         return home(state, press);
@@ -586,40 +607,36 @@ fn account(state: &mut AppState, press: Press) -> Action {
     Action::None
 }
 
-/// Opens the devices page from wherever the player is, the fullscreen one included.
+/// Opens the devices panel over whatever shows, the fullscreen player included.
 fn open_devices(state: &mut AppState) {
-    state.fullscreen = false;
-    if state.page != Page::Devices {
-        let from = std::mem::replace(&mut state.page, Page::Devices);
-        state.history.push(from);
-    }
-    state.focus.zone = Zone::Content;
-    state.focus.content = Spot::Row(0);
+    state.devices = Some(Spot::Row(0));
 }
 
-/// The devices page: the field on top, then this device and the ones found, one a row.
-fn devices(state: &mut AppState, press: Press) -> Action {
+/// The devices panel, top to bottom: its close button (`Action(2)`), this device and the ones
+/// found (`Row`), the pairing code (`Action(1)`) and the address field (`Action(0)`). Back
+/// closes it.
+fn devices(state: &mut AppState, spot: Spot, press: Press) -> Action {
     let rows = 1 + state.connect.devices.len();
-    let spot = state.focus.content;
     let next = match (spot, press) {
-        (Spot::Action(_), Press::Down) => Spot::Row(0),
-        (Spot::Action(_), Press::Ok) => return Action::EditField,
-        (Spot::Row(0), Press::Up) => Spot::Action(0),
+        (_, Press::Back) | (Spot::Action(2), Press::Ok) => {
+            state.devices = None;
+            return Action::None;
+        }
+        (Spot::Action(2), Press::Down) => Spot::Row(0),
+        (Spot::Row(0), Press::Up) => Spot::Action(2),
         (Spot::Row(row), Press::Up) => Spot::Row(row - 1),
         (Spot::Row(row), Press::Down) if row + 1 < rows => Spot::Row(row + 1),
+        (Spot::Row(_), Press::Down) => Spot::Action(1),
         (Spot::Row(0), Press::Ok) => return Action::Connect(None),
         (Spot::Row(row), Press::Ok) => return Action::Connect(Some(row - 1)),
-        (_, Press::Left) => {
-            state.focus.zone = Zone::Sidebar;
-            return Action::None;
-        }
-        (_, Press::Down) => {
-            state.focus.zone = Zone::Player;
-            return Action::None;
-        }
+        (Spot::Action(1), Press::Up) => Spot::Row(rows - 1),
+        (Spot::Action(1), Press::Down) => Spot::Action(0),
+        (Spot::Action(1), Press::Ok) => return Action::EditCode,
+        (Spot::Action(0), Press::Up) => Spot::Action(1),
+        (Spot::Action(0), Press::Ok) => return Action::EditField,
         _ => spot,
     };
-    state.focus.content = next;
+    state.devices = Some(next);
     Action::None
 }
 
@@ -649,7 +666,6 @@ pub fn first(state: &AppState) -> Spot {
 fn valid(state: &AppState, spot: Spot) -> bool {
     match spot {
         Spot::Action(i) => i < state.actions(),
-        Spot::Row(r) if state.page == Page::Devices => r <= state.connect.devices.len(),
         Spot::Cell(group, at) if state.page == Page::Account => {
             group < 2 && at < crate::settings::Scale::ALL.len()
         }

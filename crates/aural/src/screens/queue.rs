@@ -1,4 +1,4 @@
-//! The queue panel of the fullscreen player, after YouTube Music's: the whole queue in play
+//! The queue's panel, over whatever shows like the devices' panel, after YouTube Music's: the whole queue in play
 //! order (shuffled when shuffle is on), the songs already played dimmed above the one playing.
 //! Any song plays when pressed; the ones coming up also move and leave the queue.
 
@@ -7,6 +7,7 @@ use freya::radio::use_radio;
 
 use crate::library::{self, Song};
 use crate::state::{AppState, Channel};
+use crate::ui::sheet::{Palette, Sheet};
 use crate::ui::{self, Cover, Icon, color, metrics, text};
 
 /// Height of one queue row, with the line that marks a drop above it.
@@ -15,6 +16,87 @@ const ROW: f32 = 58.;
 const THUMB: f32 = 40.;
 /// How dim the songs already played are.
 const PLAYED: f32 = 0.5;
+
+/// The panel itself: a sheet with the title, a close button and the list.
+#[derive(PartialEq)]
+pub struct Queue;
+
+impl Component for Queue {
+    fn render(&self) -> impl IntoElement {
+        let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
+        let now = use_radio::<AppState, Channel>(Channel::Now);
+        let (open, glass) = {
+            let state = navigation.read();
+            (state.queue, state.fullscreen)
+        };
+        let count = now.read().now.queue.len();
+        let compact = ui::compact();
+        let (top, bottom) = ui::safe();
+        let palette = Palette::new(glass);
+        Sheet {
+            open,
+            glass,
+            tall: ui::viewport().1 * 0.85,
+            close: crate::app::close_queue,
+            content: rect()
+                .width(Size::fill())
+                .height(Size::fill())
+                .padding(match compact {
+                    true => (14., 20., bottom, 20.),
+                    false => (36. + top, 24., bottom, 24.),
+                })
+                .spacing(16.)
+                .content(Content::Flex)
+                // Title and close.
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .direction(Direction::Horizontal)
+                        .content(Content::Flex)
+                        .cross_align(Alignment::Start)
+                        .padding((0., 0., 0., 16.))
+                        .child(
+                            rect()
+                                .width(Size::flex(1.))
+                                .spacing(6.)
+                                .child(
+                                    ui::line("Cola", text::TITLE + 4., color::FOREGROUND)
+                                        .font_weight(FontWeight::BOLD),
+                                )
+                                .child(ui::line(
+                                    match count {
+                                        1 => "1 canción".to_owned(),
+                                        count => format!("{count} canciones"),
+                                    },
+                                    text::SMALL,
+                                    color::MUTED_FOREGROUND,
+                                )),
+                        )
+                        .child(
+                            rect()
+                                .width(Size::px(40.))
+                                .height(Size::px(40.))
+                                .center()
+                                .corner_radius(20.)
+                                .background(palette.raised)
+                                .on_press(|event: Event<PressEventData>| {
+                                    event.stop_propagation();
+                                    crate::app::close_queue();
+                                })
+                                .child(ui::icon(Icon::Close, 18., color::FOREGROUND)),
+                        ),
+                )
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::flex(1.))
+                        // Mounted with the sheet, so each opening starts at the song playing.
+                        .child(QueuePanel),
+                )
+                .into_element(),
+        }
+    }
+}
 
 #[derive(PartialEq)]
 pub struct QueuePanel;
@@ -43,10 +125,8 @@ impl Component for QueuePanel {
         rect()
             .width(Size::fill())
             .height(Size::fill())
-            .padding((24., 0., 0., 0.))
             .spacing(10.)
             .content(Content::Flex)
-            .child(ui::eyebrow("Cola").color(color::ON_BACKDROP))
             .child(
                 rect().width(Size::fill()).height(Size::flex(1.)).child(
                     // A finger scrolls through `TouchScroll`, which leaves sideways swipes and

@@ -229,7 +229,6 @@ pub(crate) fn entry(page: &Page) -> (Icon, &'static str) {
         Page::Songs => (Icon::HeartFilled, "Me gusta"),
         Page::Playlists => (Icon::Queue, "Playlists"),
         Page::Albums => (Icon::Album, "Álbumes"),
-        Page::Devices => (Icon::Cast, "Dispositivos"),
         Page::Account | Page::Detail(_) | Page::Artist(_) => (Icon::Settings, "Cuenta"),
     }
 }

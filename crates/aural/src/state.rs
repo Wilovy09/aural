@@ -53,8 +53,6 @@ pub enum Page {
     Detail(Collection),
     Artist(Collection),
     Account,
-    /// The other Aurals to play on.
-    Devices,
 }
 
 /// The sidebar's entries, top to bottom.
@@ -154,8 +152,6 @@ pub enum View {
     Music,
     /// The cover beside the lyrics.
     Lyrics,
-    /// The cover beside what plays next.
-    Queue,
 }
 
 /// What is playing.
@@ -285,6 +281,10 @@ pub struct AppState {
     pub clearing: Option<bool>,
     /// What the cache takes on disk, once measured.
     pub cache_size: Option<u64>,
+    /// The devices panel of Aural Connect, while open: the spot its focus is on.
+    pub devices: Option<Spot>,
+    /// The queue's panel is open: it slides in over whatever shows, as the devices' does.
+    pub queue: bool,
     pub now: Now,
     pub position: Position,
     pub sheet: Sheet,
@@ -395,7 +395,6 @@ impl AppState {
             Page::Account => 6,
             Page::Artist(_) => 2,
             Page::Search => 2,
-            Page::Devices => 1,
             Page::Home => 0,
             Page::Playlists | Page::Albums => 0,
         }

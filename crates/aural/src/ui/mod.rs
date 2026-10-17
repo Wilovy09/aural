@@ -5,6 +5,8 @@
 mod cover;
 pub mod form_input;
 pub mod long_press;
+pub mod marquee;
+pub mod sheet;
 pub mod spectrum;
 pub mod swipe;
 pub mod tint;
@@ -167,6 +169,9 @@ pub enum Icon {
     Plus,
     ChevronDown,
     Trash,
+    Laptop,
+    Tv,
+    Phone,
 }
 
 impl Icon {
@@ -229,6 +234,9 @@ impl Icon {
             Icon::Plus => svg!("plus"),
             Icon::ChevronDown => svg!("chevron-down"),
             Icon::Trash => svg!("trash-2"),
+            Icon::Laptop => svg!("laptop"),
+            Icon::Tv => svg!("tv"),
+            Icon::Phone => svg!("smartphone"),
         }
     }
 }
