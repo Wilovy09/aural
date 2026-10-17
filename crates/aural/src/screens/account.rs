@@ -59,7 +59,8 @@ impl Component for Account {
             .child(
                 rect()
                     .width(Size::fill())
-                    .max_width(Size::px(760.))
+                    // Two columns of settings on a computer or a TV, one on a phone.
+                    .max_width(Size::px(if ui::compact() { 760. } else { 1240. }))
                     .padding((ui::inset() / 2., ui::inset(), ui::inset(), ui::inset()))
                     .spacing(28.)
                     // Who is signed in.
@@ -80,102 +81,106 @@ impl Component for Account {
                                     .child(ui::line(handle, text::BODY, color::MUTED_FOREGROUND)),
                             ),
                     )
-                    .child(group(
-                        "Reproducción",
-                        [
-                            Some(
-                                row(
-                                    Icon::Motion,
-                                    "Portadas animadas",
-                                    "Se ven en el reproductor a pantalla completa",
-                                    switch(motion, light),
-                                    on(Spot::Action(1)),
-                                    Target::Content(Spot::Action(1)),
+                    .child(pair(
+                        group(
+                            "Reproducción",
+                            [
+                                Some(
+                                    row(
+                                        Icon::Motion,
+                                        "Portadas animadas",
+                                        "Se ven en el reproductor a pantalla completa",
+                                        switch(motion, light),
+                                        on(Spot::Action(1)),
+                                        Target::Content(Spot::Action(1)),
+                                        light,
+                                    )
+                                    .into_element(),
+                                ),
+                                Some(
+                                    row(
+                                        Icon::Mix,
+                                        "Reproducción infinita",
+                                        "Al terminar un álbum o un mix, sigue con música similar",
+                                        switch(autoplay, light),
+                                        on(Spot::Action(4)),
+                                        Target::Content(Spot::Action(4)),
+                                        light,
+                                    )
+                                    .into_element(),
+                                ),
+                                crate::nav::DISCORD.then(|| {
+                                    row(
+                                        Icon::User,
+                                        "Actividad en Discord",
+                                        "Muestra en tu perfil la canción que suena",
+                                        switch(discord, light),
+                                        on(Spot::Action(3)),
+                                        Target::Content(Spot::Action(3)),
+                                        light,
+                                    )
+                                    .into_element()
+                                }),
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect(),
+                        ),
+                        group(
+                            "Apariencia",
+                            vec![
+                                sizes(
+                                    "Tamaño del texto",
+                                    0,
+                                    text_size,
+                                    focus.zone == Zone::Content,
+                                    focus.content,
                                     light,
                                 )
                                 .into_element(),
-                            ),
-                            Some(
-                                row(
-                                    Icon::Mix,
-                                    "Reproducción infinita",
-                                    "Al terminar un álbum o un mix, sigue con música similar",
-                                    switch(autoplay, light),
-                                    on(Spot::Action(4)),
-                                    Target::Content(Spot::Action(4)),
+                                sizes(
+                                    "Tamaño de la interfaz",
+                                    1,
+                                    interface,
+                                    focus.zone == Zone::Content,
+                                    focus.content,
                                     light,
                                 )
                                 .into_element(),
-                            ),
-                            crate::nav::DISCORD.then(|| {
+                            ],
+                        ),
+                    ))
+                    .child(pair(
+                        group(
+                            "Almacenamiento",
+                            vec![
                                 row(
-                                    Icon::User,
-                                    "Actividad en Discord",
-                                    "Muestra en tu perfil la canción que suena",
-                                    switch(discord, light),
-                                    on(Spot::Action(3)),
-                                    Target::Content(Spot::Action(3)),
+                                    Icon::Trash,
+                                    "Borrar caché",
+                                    &cache_hint,
+                                    ui::icon(Icon::Next, 16., color::FAINT).into_element(),
+                                    on(Spot::Action(5)),
+                                    Target::Content(Spot::Action(5)),
                                     light,
                                 )
-                                .into_element()
-                            }),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .collect(),
-                    ))
-                    .child(group(
-                        "Apariencia",
-                        vec![
-                            sizes(
-                                "Tamaño del texto",
-                                0,
-                                text_size,
-                                focus.zone == Zone::Content,
-                                focus.content,
-                                light,
-                            )
-                            .into_element(),
-                            sizes(
-                                "Tamaño de la interfaz",
-                                1,
-                                interface,
-                                focus.zone == Zone::Content,
-                                focus.content,
-                                light,
-                            )
-                            .into_element(),
-                        ],
-                    ))
-                    .child(group(
-                        "Almacenamiento",
-                        vec![
-                            row(
-                                Icon::Trash,
-                                "Borrar caché",
-                                &cache_hint,
-                                ui::icon(Icon::Next, 16., color::FAINT).into_element(),
-                                on(Spot::Action(5)),
-                                Target::Content(Spot::Action(5)),
-                                light,
-                            )
-                            .into_element(),
-                        ],
-                    ))
-                    .child(group(
-                        "Conexión",
-                        vec![
-                            row(
-                                Icon::Cast,
-                                "Dispositivos",
-                                "Reproduce en otro Aural de tu red",
-                                ui::icon(Icon::Next, 16., color::FAINT).into_element(),
-                                on(Spot::Action(2)),
-                                Target::Content(Spot::Action(2)),
-                                light,
-                            )
-                            .into_element(),
-                        ],
+                                .into_element(),
+                            ],
+                        ),
+                        group(
+                            "Conexión",
+                            vec![
+                                row(
+                                    Icon::Cast,
+                                    "Dispositivos",
+                                    "Reproduce en otro Aural de tu red",
+                                    ui::icon(Icon::Next, 16., color::FAINT).into_element(),
+                                    on(Spot::Action(2)),
+                                    Target::Content(Spot::Action(2)),
+                                    light,
+                                )
+                                .into_element(),
+                            ],
+                        ),
                     ))
                     .child(
                         rect()
@@ -346,6 +351,29 @@ pub(crate) fn avatar(photo: Option<String>, name: &str, side: f32, light: Color)
             )
             .into_element(),
     }
+}
+
+/// Two groups side by side on a computer or a TV, one over the other on a phone.
+fn pair(left: impl IntoElement, right: impl IntoElement) -> impl IntoElement {
+    let compact = ui::compact();
+    let side = |group: Element| {
+        rect()
+            .width(match compact {
+                true => Size::fill(),
+                false => Size::flex(1.),
+            })
+            .child(group)
+    };
+    rect()
+        .width(Size::fill())
+        .direction(match compact {
+            true => Direction::Vertical,
+            false => Direction::Horizontal,
+        })
+        .content(Content::Flex)
+        .spacing(28.)
+        .child(side(left.into_element()))
+        .child(side(right.into_element()))
 }
 
 /// A titled group of settings rows on one raised surface.
