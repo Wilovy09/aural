@@ -272,6 +272,7 @@ pub fn app() -> impl IntoElement {
             discord: settings.discord,
             volume: settings.volume,
             autoplay: settings.autoplay,
+            backdrop: settings.backdrop,
             ..AppState::default()
         }
     });
@@ -657,6 +658,12 @@ fn perform(station: Station, engine: &Engine, action: Action) {
             save_settings(&state);
         }
         Action::ClearCache => clear_cache(station),
+        Action::ToggleBackdrop => {
+            let mut station = station;
+            let mut state = station.write_channel(Channel::Navigation);
+            state.backdrop = !state.backdrop;
+            save_settings(&state);
+        }
         Action::ToggleAutoplay => {
             let mut station = station;
             let mut state = station.write_channel(Channel::Navigation);
@@ -1011,6 +1018,7 @@ fn save_settings(state: &AppState) {
         discord: state.discord,
         volume: state.volume,
         autoplay: state.autoplay,
+        backdrop: state.backdrop,
     });
 }
 

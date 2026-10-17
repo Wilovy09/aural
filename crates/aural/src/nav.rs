@@ -32,6 +32,7 @@ pub enum Action {
     ToggleMotion,
     ToggleDiscord,
     ToggleAutoplay,
+    ToggleBackdrop,
     /// Clears the covers kept and the cover lookups, once confirmed.
     ClearCache,
     ToggleShuffle,
@@ -421,6 +422,7 @@ fn content_action(state: &AppState, spot: Spot) -> Action {
         (Spot::Action(1), Page::Account) => Action::ToggleMotion,
         (Spot::Action(3), Page::Account) => Action::ToggleDiscord,
         (Spot::Action(4), Page::Account) => Action::ToggleAutoplay,
+        (Spot::Action(6), Page::Account) => Action::ToggleBackdrop,
         (Spot::Action(5), Page::Account) => Action::None,
         (Spot::Action(_), Page::Account) => match state.auth {
             crate::state::Auth::SignedIn(_) => Action::SignOut,
@@ -553,8 +555,10 @@ fn account(state: &mut AppState, press: Press) -> Action {
     let (text, interface) = (chosen(state.text), chosen(state.interface));
     let spot = state.focus.content;
     let next = match (spot, press) {
-        (Spot::Action(1), Press::Down) => Spot::Action(4),
-        (Spot::Action(4), Press::Up) => Spot::Action(1),
+        (Spot::Action(1), Press::Down) => Spot::Action(6),
+        (Spot::Action(6), Press::Up) => Spot::Action(1),
+        (Spot::Action(6), Press::Down) => Spot::Action(4),
+        (Spot::Action(4), Press::Up) => Spot::Action(6),
         (Spot::Action(4), Press::Down) if DISCORD => Spot::Action(3),
         (Spot::Action(4), Press::Down) => Spot::Cell(0, text),
         (Spot::Action(3), Press::Up) => Spot::Action(4),
@@ -576,6 +580,7 @@ fn account(state: &mut AppState, press: Press) -> Action {
         (Spot::Action(1), Press::Ok) => return Action::ToggleMotion,
         (Spot::Action(3), Press::Ok) => return Action::ToggleDiscord,
         (Spot::Action(4), Press::Ok) => return Action::ToggleAutoplay,
+        (Spot::Action(6), Press::Ok) => return Action::ToggleBackdrop,
         (Spot::Action(5), Press::Ok) => {
             state.clearing = Some(false);
             return Action::None;

@@ -90,6 +90,11 @@ impl Component for Backdrop {
 
         // A frame clock at FPS: a looping animation would re-render at the display's rate,
         // up to 120 Hz, for a canvas that only changes FPS times a second.
+        // It only moves when the setting is on (opt-in); off, it still ticks while a new cover
+        // fades in, then rests.
+        let navigation = use_radio::<AppState, Channel>(Channel::Navigation);
+        let animated = navigation.read().backdrop;
+        let moving = use_reactive(&animated);
         let mut tick = use_state(|| 0u64);
         use_hook(move || {
             spawn(async move {
@@ -99,13 +104,19 @@ impl Component for Backdrop {
                         tokio::time::sleep(Duration::from_secs_f32(1. / FPS)).await;
                     })
                     .await;
-                    *tick.write() += 1;
+                    let fading = bases.peek().2.elapsed() < FADE;
+                    if *moving.peek() || fading {
+                        *tick.write() += 1;
+                    }
                 }
             });
         });
-        tick.read();
-        let frame = (started.elapsed().as_secs_f32() * FPS) as u64;
-        let time = frame as f32 / FPS;
+        // Each tick repaints the canvas, keyed by it.
+        let frame = *tick.read();
+        let time = match animated {
+            true => ((started.elapsed().as_secs_f32() * FPS) as u64) as f32 / FPS,
+            false => 0.,
+        };
 
         let (current, previous, since) = bases.read().clone();
         let fade = (since.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);

@@ -20,6 +20,7 @@ impl Component for Account {
         let light = now.read().now.light.unwrap_or(color::FOCUS_ON_PRIMARY);
         let state = navigation.read();
         let focus = state.focus;
+        let backdrop = state.backdrop;
         let (motion, autoplay, discord, text_size, interface, confirming) = (
             state.motion,
             state.autoplay,
@@ -93,6 +94,18 @@ impl Component for Account {
                                         switch(motion, light),
                                         on(Spot::Action(1)),
                                         Target::Content(Spot::Action(1)),
+                                        light,
+                                    )
+                                    .into_element(),
+                                ),
+                                Some(
+                                    row(
+                                        Icon::Music,
+                                        "Fondo animado",
+                                        "Los colores de la portada se mueven detrás del reproductor",
+                                        switch(backdrop, light),
+                                        on(Spot::Action(6)),
+                                        Target::Content(Spot::Action(6)),
                                         light,
                                     )
                                     .into_element(),
@@ -214,6 +227,14 @@ impl Component for Account {
                                         .font_weight(FontWeight::SEMI_BOLD),
                                     ),
                             ),
+                    )
+                    // The screen this runs on, in small print at the foot of the page.
+                    .child(
+                        rect().width(Size::fill()).center().child(ui::line(
+                            screen_size(),
+                            text::SMALL,
+                            color::FAINT,
+                        )),
                     ),
             );
         rect()
@@ -221,6 +242,23 @@ impl Component for Account {
             .child(page)
             .maybe_child(clearing.map(|clear| confirm_clear(clear, cache_size)))
     }
+}
+
+/// "Pantalla: 2560 × 1600 px · escala 2×": the window's size in real pixels and the scale
+/// the interface is drawn at.
+fn screen_size() -> String {
+    let window = Platform::get().current_window();
+    let size = *window.root_size.read();
+    let scale = *window.scale_factor.read();
+    let scale = match scale.fract() {
+        0. => format!("{scale:.0}"),
+        _ => format!("{scale:.2}").trim_end_matches('0').to_owned(),
+    };
+    format!(
+        "Pantalla: {} × {} px · escala {scale}×",
+        size.width.round(),
+        size.height.round()
+    )
 }
 
 /// "¿Borrar la caché?": what goes and what stays, over the page. Cancelar starts chosen; the

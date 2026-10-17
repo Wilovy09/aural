@@ -272,6 +272,8 @@ pub struct AppState {
     pub discord: bool,
     /// Whether the queue plays on with similar songs once it runs out.
     pub autoplay: bool,
+    /// Whether the fullscreen player's backdrop keeps moving.
+    pub backdrop: bool,
     /// How loud the music plays, apart from the device's volume.
     pub volume: crate::engine::Volume,
     /// Sign out was pressed once and waits for a second OK.
@@ -392,7 +394,7 @@ impl AppState {
         match &self.page {
             Page::Detail(collection) if collection.kind == crate::library::Kind::Album => 3,
             Page::Songs | Page::Detail(_) => 2,
-            Page::Account => 6,
+            Page::Account => 7,
             Page::Artist(_) => 2,
             Page::Search => 2,
             Page::Home => 0,
